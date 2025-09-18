@@ -1,0 +1,4 @@
+.env
+rtds_logs.db
+*.log
+.monitor_path

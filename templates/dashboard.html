@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RTDS - Real Time Threat Detection Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            overflow-x: auto;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 1rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo h1 {
+            font-size: 1.8rem;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 700;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: rgba(76, 175, 80, 0.2);
+            border: 1px solid #4caf50;
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: #4caf50;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .dashboard {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .stats-grid {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stat-label {
+            color: #aaaaaa;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .card-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 1rem;
+        }
+
+        .alert-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .alert-item {
+            display: flex;
+            align-items: center;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            border-left: 4px solid;
+            transition: all 0.3s ease;
+        }
+
+        .alert-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateX(5px);
+        }
+
+        .alert-item.high {
+            border-left-color: #f44336;
+        }
+
+        .alert-item.medium {
+            border-left-color: #ff9800;
+        }
+
+        .alert-item.low {
+            border-left-color: #4caf50;
+        }
+
+        .alert-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 1rem;
+            font-size: 1.2rem;
+        }
+
+        .alert-icon.high {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+
+        .alert-icon.medium {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+        }
+
+        .alert-icon.low {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+        }
+
+        .alert-content {
+            flex: 1;
+        }
+
+        .alert-title {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .alert-details {
+            color: #aaaaaa;
+            font-size: 0.9rem;
+        }
+
+        .alert-time {
+            color: #666666;
+            font-size: 0.8rem;
+            white-space: nowrap;
+        }
+
+        .file-scan-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .file-scan-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .file-info {
+            flex: 1;
+        }
+
+        .file-name {
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+        }
+
+        .file-status {
+            font-size: 0.8rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .file-status.clean {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+        }
+
+        .file-status.malware {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+
+        .file-status.suspicious {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+        }
+
+        .top-attackers {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .attacker-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+        }
+
+        .attacker-ip {
+            font-family: 'Courier New', monospace;
+            font-weight: 500;
+        }
+
+        .attacker-count {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #aaaaaa;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left: 4px solid #4ecdc4;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 2rem;
+            color: #666666;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+                padding: 1rem;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .header-content {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .logo h1 {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <div class="logo">
+                <h1>🛡️ RTDS Dashboard</h1>
+            </div>
+            <div class="status-indicator">
+                <div class="status-dot"></div>
+                <span>System Active</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <!-- Statistics Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="totalPackets">0</div>
+                <div class="stat-label">Total Packets</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalAttacks">0</div>
+                <div class="stat-label">Network Attacks</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="filesScanned">0</div>
+                <div class="stat-label">Files Scanned</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="malwareFound">0</div>
+                <div class="stat-label">Malware Detected</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="currentThreats">0</div>
+                <div class="stat-label">Active Threats</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="uptime">00:00:00</div>
+                <div class="stat-label">System Uptime</div>
+            </div>
+        </div>
+
+        <!-- Real-time Packet Timeline Chart -->
+        <div class="card" style="grid-column: 1 / 3;">
+            <div class="card-header">
+                <h3 class="card-title">📊 Network Traffic Timeline</h3>
+                <span id="lastUpdate" class="alert-time">Last updated: Never</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="packetChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Recent Threats -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">🚨 Recent Threats</h3>
+                <span id="threatCount" class="alert-time">0 alerts</span>
+            </div>
+            <div class="alert-list" id="alertList">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading threat data...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Attackers -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">🎯 Top Attackers</h3>
+            </div>
+            <div class="top-attackers" id="topAttackers">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading attacker data...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Threat Distribution Chart -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">📈 Threat Distribution</h3>
+            </div>
+            <div class="chart-container" style="height: 250px;">
+                <canvas id="threatChart"></canvas>
+            </div>
+        </div>
+
+        <!-- File Scan Results -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">📄 File Scan Results</h3>
+            </div>
+            <div class="alert-list" id="fileScanList">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading scan results...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Network Devices -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">🌐 Network Devices</h3>
+                <span id="deviceCount" class="alert-time">0 devices</span>
+            </div>
+            <div class="alert-list" id="networkDevicesList">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Scanning network devices...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Socket.IO
+        const socket = io();
+
+        // Chart instances
+        let packetChart = null;
+        let threatChart = null;
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeCharts();
+            loadInitialData();
+            setupSocketListeners();
+            
+            // Auto-refresh data every 30 seconds
+            setInterval(loadInitialData, 30000);
+        });
+
+        function initializeCharts() {
+            // Packet Timeline Chart
+            const packetCtx = document.getElementById('packetChart').getContext('2d');
+            packetChart = new Chart(packetCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Packets/sec',
+                        data: [],
+                        borderColor: '#4ecdc4',
+                        backgroundColor: 'rgba(78, 205, 196, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#ffffff' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                            ticks: { color: '#aaaaaa' }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                            ticks: { color: '#aaaaaa' }
+                        }
+                    },
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    }
+                }
+            });
+
+            // Threat Distribution Chart
+            const threatCtx = document.getElementById('threatChart').getContext('2d');
+            threatChart = new Chart(threatCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        data: [],
+                        backgroundColor: [
+                            '#ff6b6b',
+                            '#4ecdc4',
+                            '#45b7d1',
+                            '#96ceb4',
+                            '#feca57',
+                            '#ff9ff3',
+                            '#54a0ff'
+                        ],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#ffffff',
+                                padding: 20
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function loadInitialData() {
+            // Load statistics
+            fetch('/api/stats')
+                .then(response => response.json())
+                .then(data => updateStats(data))
+                .catch(error => console.error('Error loading stats:', error));
+
+            // Load recent attacks
+            fetch('/api/recent-attacks')
+                .then(response => response.json())
+                .then(data => updateAlerts(data))
+                .catch(error => console.error('Error loading attacks:', error));
+
+            // Load packet timeline
+            fetch('/api/packet-timeline')
+                .then(response => response.json())
+                .then(data => updatePacketChart(data))
+                .catch(error => console.error('Error loading timeline:', error));
+
+            // Load threat breakdown
+            fetch('/api/threat-breakdown')
+                .then(response => response.json())
+                .then(data => updateThreatChart(data))
+                .catch(error => console.error('Error loading threats:', error));
+
+            // Load top attackers
+            fetch('/api/top-attackers')
+                .then(response => response.json())
+                .then(data => updateTopAttackers(data))
+                .catch(error => console.error('Error loading attackers:', error));
+
+            // Load file scans
+            fetch('/api/file-scans')
+                .then(response => response.json())
+                .then(data => updateFileScans(data))
+                .catch(error => console.error('Error loading file scans:', error));
+
+            // Load network devices
+            fetch('/api/network-devices')
+                .then(response => response.json())
+                .then(data => updateNetworkDevices(data))
+                .catch(error => console.error('Error loading network devices:', error));
+
+            // Update last refresh time
+            document.getElementById('lastUpdate').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        }
+
+        function updateStats(stats) {
+            document.getElementById('totalPackets').textContent = formatNumber(stats.total_packets);
+            document.getElementById('totalAttacks').textContent = formatNumber(stats.total_attacks);
+            document.getElementById('filesScanned').textContent = formatNumber(stats.total_files_scanned);
+            document.getElementById('malwareFound').textContent = formatNumber(stats.total_malware_found);
+            document.getElementById('currentThreats').textContent = formatNumber(stats.current_threats);
+            document.getElementById('uptime').textContent = stats.uptime || '00:00:00';
+        }
+
+        function updateAlerts(alerts) {
+            const alertList = document.getElementById('alertList');
+            document.getElementById('threatCount').textContent = `${alerts.length} alerts`;
+
+            if (alerts.length === 0) {
+                alertList.innerHTML = '<div class="no-data">✅ No recent threats detected</div>';
+                return;
+            }
+
+            alertList.innerHTML = alerts.reverse().map(alert => `
+                <div class="alert-item ${alert.severity.toLowerCase()}">
+                    <div class="alert-icon ${alert.severity.toLowerCase()}">
+                        ${getAlertIcon(alert.type)}
+                    </div>
+                    <div class="alert-content">
+                        <div class="alert-title">${alert.type} Attack</div>
+                        <div class="alert-details">Source: ${alert.source}</div>
+                    </div>
+                    <div class="alert-time">${alert.time_ago}</div>
+                </div>
+            `).join('');
+        }
+
+        function updatePacketChart(timelineData) {
+            if (!packetChart || timelineData.length === 0) return;
+
+            const labels = timelineData.map(point => point.time);
+            const data = timelineData.map(point => point.packets);
+
+            packetChart.data.labels = labels;
+            packetChart.data.datasets[0].data = data;
+            packetChart.update('none');
+        }
+
+        function updateThreatChart(threatData) {
+            if (!threatChart) return;
+
+            const labels = Object.keys(threatData);
+            const data = Object.values(threatData);
+
+            if (labels.length === 0) {
+                threatChart.data.labels = ['No Threats'];
+                threatChart.data.datasets[0].data = [1];
+                threatChart.data.datasets[0].backgroundColor = ['#4caf50'];
+            } else {
+                threatChart.data.labels = labels;
+                threatChart.data.datasets[0].data = data;
+            }
+
+            threatChart.update('none');
+        }
+
+        function updateTopAttackers(attackers) {
+            const container = document.getElementById('topAttackers');
+
+            if (attackers.length === 0) {
+                container.innerHTML = '<div class="no-data">✅ No attackers detected</div>';
+                return;
+            }
+
+            container.innerHTML = attackers.map(attacker => `
+                <div class="attacker-item">
+                    <div class="attacker-ip">${attacker.ip}</div>
+                    <div class="attacker-count">${attacker.count}</div>
+                </div>
+            `).join('');
+        }
+
+        function updateFileScans(scans) {
+            const container = document.getElementById('fileScanList');
+
+            if (scans.length === 0) {
+                container.innerHTML = '<div class="no-data">📁 No recent file scans</div>';
+                return;
+            }
+
+            container.innerHTML = scans.reverse().map(scan => `
+                <div class="file-scan-item">
+                    <div class="file-info">
+                        <div class="file-name">📄 ${scan.filename}</div>
+                        <div class="file-status ${scan.status.toLowerCase()}">${scan.status}</div>
+                    </div>
+                    <div class="alert-time">${scan.time_ago}</div>
+                </div>
+            `).join('');
+        }
+
+        function setupSocketListeners() {
+            socket.on('connect', function() {
+                console.log('Connected to RTDS Dashboard');
+            });
+
+            socket.on('disconnect', function() {
+                console.log('Disconnected from RTDS Dashboard');
+            });
+
+            socket.on('new_attack', function(attack) {
+                // Refresh attacks when new one arrives
+                fetch('/api/recent-attacks')
+                    .then(response => response.json())
+                    .then(data => updateAlerts(data));
+
+                // Show notification
+                showNotification(`🚨 New ${attack.type} attack detected from ${attack.source}`, 'danger');
+            });
+
+            socket.on('new_file_scan', function(fileScan) {
+                // Refresh file scans
+                fetch('/api/file-scans')
+                    .then(response => response.json())
+                    .then(data => updateFileScans(data));
+
+                // Show notification for malware
+                if (fileScan.status === 'MALWARE') {
+                    showNotification(`🦠 Malware detected in ${fileScan.filename}`, 'danger');
+                }
+            });
+
+            socket.on('stats_update', function(stats) {
+                updateStats(stats);
+            });
+        }
+
+        function getAlertIcon(type) {
+            const icons = {
+                'DDOS': '⚡',
+                'SYN_FLOOD': '🌊',
+                'MITM': '🕵️',
+                'MALWARE': '🦠',
+                'SUSPICIOUS': '⚠️'
+            };
+            return icons[type] || '🚨';
+        }
+
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return num.toString();
+        }
+
+        function showNotification(message, type = 'info') {
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 1rem 1.5rem;
+                border-radius: 8px;
+                color: white;
+                font-weight: 500;
+                z-index: 10000;
+                max-width: 300px;
+                word-wrap: break-word;
+                animation: slideIn 0.3s ease;
+                background: ${type === 'danger' ? 'rgba(244, 67, 54, 0.9)' : 'rgba(76, 175, 80, 0.9)'};
+                border: 1px solid ${type === 'danger' ? '#f44336' : '#4caf50'};
+            `;
+            notification.textContent = message;
+
+            // Add CSS animation
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes slideIn {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+            `;
+            document.head.appendChild(style);
+
+            document.body.appendChild(notification);
+
+            // Remove after 5 seconds
+            setTimeout(() => {
+                notification.style.animation = 'slideIn 0.3s ease reverse';
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, 5000);
+        }
+
+        function updateNetworkDevices(devices) {
+            const devicesList = document.getElementById('networkDevicesList');
+            const deviceCount = document.getElementById('deviceCount');
+            
+            deviceCount.textContent = `${devices.length} devices`;
+            
+            if (devices.length === 0) {
+                devicesList.innerHTML = '<div class="no-data">No network devices discovered</div>';
+                return;
+            }
+
+            const devicesHtml = devices.map(device => `
+                <div class="alert-item">
+                    <div class="alert-content">
+                        <div class="alert-header">
+                            <span class="alert-type" style="background: rgba(76, 175, 80, 0.2); color: #4caf50;">
+                                🌐 ${device.hostname !== 'Unknown' ? device.hostname : 'Device'}
+                            </span>
+                            <span class="alert-time">${new Date(device.last_seen).toLocaleTimeString()}</span>
+                        </div>
+                        <div class="alert-details">
+                            <strong>IP:</strong> ${device.ip} | 
+                            <strong>MAC:</strong> ${device.mac} | 
+                            <strong>Status:</strong> ${device.status}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            devicesList.innerHTML = devicesHtml;
+        }
+
+        // Handle window focus/blur for real-time updates
+        let isWindowFocused = true;
+        
+        window.addEventListener('focus', () => {
+            isWindowFocused = true;
+            loadInitialData(); // Refresh data when window gains focus
+        });
+
+        window.addEventListener('blur', () => {
+            isWindowFocused = false;
+        });
+    </script>
+</body>
+</html>
