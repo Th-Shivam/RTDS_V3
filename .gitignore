@@ -2,3 +2,5 @@
 rtds_logs.db
 *.log
 .monitor_path
+__pycache__/
+*.pyc

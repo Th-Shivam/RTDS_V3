@@ -11,6 +11,7 @@ from scapy.layers.inet import IP, TCP
 from scapy.layers.l2 import ARP
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from ip_blocker import IPBlocker
 
 # Load environment variables
 load_dotenv()
@@ -46,53 +47,115 @@ class FileMonitorHandler(FileSystemEventHandler):
             file_path: Path to the file to be scanned
         """
         try:
+            # Skip certain file types and system files
+            if self._should_skip_file(file_path):
+                return
+                
             # Calculate SHA-256 hash of the file
             with open(file_path, 'rb') as f:
-                sha256 = hashlib.sha256(f.read()).hexdigest()
+                file_content = f.read()
+                sha256 = hashlib.sha256(file_content).hexdigest()
+            
+            print(f"🔍 Scanning file: {os.path.basename(file_path)} (SHA256: {sha256[:16]}...)")
             
             # Check with VirusTotal API
             url = f"https://www.virustotal.com/api/v3/files/{sha256}"
             headers = {"x-apikey": self.api_key}
             
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(url, headers=headers, timeout=15)
             
             if response.status_code == 200:
                 data = response.json()
                 
                 # Parse the result
-                malicious_count = data['data']['attributes']['last_analysis_stats']['malicious']
-                suspicious_count = data['data']['attributes']['last_analysis_stats']['suspicious']
+                stats = data['data']['attributes']['last_analysis_stats']
+                malicious_count = stats.get('malicious', 0)
+                suspicious_count = stats.get('suspicious', 0)
                 
                 if malicious_count > 0:
-                    alert_msg = f"🦠 MALWARE DETECTED: {file_path} - Malicious detections: {malicious_count}"
+                    alert_msg = f"🦠 MALWARE DETECTED: {file_path} - Detections: {malicious_count}/{stats.get('total', 0)} engines"
                     print(f"\033[91m{alert_msg}\033[0m")
                     self.log_callback(alert_msg, "MALWARE")
-                    
-                    # Automatically delete malicious file
                     self.quarantine_malicious_file(file_path)
                 elif suspicious_count > 0:
-                    alert_msg = f"⚠️ SUSPICIOUS FILE: {file_path} - Suspicious detections: {suspicious_count}"
+                    alert_msg = f"⚠️ SUSPICIOUS FILE: {file_path} - Detections: {suspicious_count}/{stats.get('total', 0)} engines"
                     print(f"\033[93m{alert_msg}\033[0m")
                     self.log_callback(alert_msg, "SUSPICIOUS")
                 else:
-                    print(f"\033[92m✅ File is clean: {file_path}\033[0m")
+                    clean_msg = f"✅ File is clean: {os.path.basename(file_path)}"
+                    print(f"\033[92m{clean_msg}\033[0m")
+                    self.log_callback(clean_msg, "CLEAN")
+                    
             elif response.status_code == 404:
-                # File not found in VirusTotal database
-                alert_msg = f"📁 NEW FILE: {file_path} - Not in VirusTotal database (uploading for analysis)"
-                print(f"\033[96m{alert_msg}\033[0m")
-                self.log_callback(alert_msg, "NEW_FILE")
-                # Optionally upload file for analysis here
+                # File not found - upload for analysis
+                print(f"\033[96m📤 File not in database, uploading: {os.path.basename(file_path)}\033[0m")
+                upload_result = self._upload_file_to_virustotal(file_path, file_content)
+                if upload_result:
+                    self.log_callback(f"📤 UPLOADED: {file_path} - Analysis pending", "UPLOADED")
+                else:
+                    self.log_callback(f"📁 NEW FILE: {file_path} - Upload failed", "NEW_FILE")
             else:
-                error_msg = f"❌ Error checking file on VirusTotal: {response.status_code} - {response.text}"
+                error_msg = f"❌ VirusTotal API error: {response.status_code}"
                 print(f"\033[91m{error_msg}\033[0m")
                 self.log_callback(error_msg, "VT_ERROR")
                 
         except FileNotFoundError:
             print(f"[!] File not found: {file_path}")
         except Exception as e:
-            error_msg = f"❌ Error scanning file {file_path}: {e}"
+            error_msg = f"❌ Error scanning file {os.path.basename(file_path)}: {e}"
             print(f"\033[91m{error_msg}\033[0m")
             self.log_callback(error_msg, "SCAN_ERROR")
+    
+    def _should_skip_file(self, file_path):
+        """Check if file should be skipped from scanning"""
+        # Skip hidden files and system files
+        filename = os.path.basename(file_path)
+        if filename.startswith('.'):
+            return True
+            
+        # Skip very large files (>100MB)
+        try:
+            if os.path.getsize(file_path) > 100 * 1024 * 1024:
+                print(f"⚠️ Skipping large file: {filename}")
+                return True
+        except:
+            return True
+            
+        # Skip certain safe extensions (but allow .txt for testing)
+        safe_extensions = {'.log', '.md', '.json', '.xml', '.csv'}
+        _, ext = os.path.splitext(filename.lower())
+        if ext in safe_extensions:
+            return True
+            
+        return False
+    
+    def _upload_file_to_virustotal(self, file_path, file_content):
+        """Upload file to VirusTotal for analysis"""
+        try:
+            # Check file size limit (32MB for free API)
+            if len(file_content) > 32 * 1024 * 1024:
+                print(f"⚠️ File too large for upload: {os.path.basename(file_path)}")
+                return False
+                
+            url = "https://www.virustotal.com/api/v3/files"
+            headers = {"x-apikey": self.api_key}
+            
+            files = {"file": (os.path.basename(file_path), file_content)}
+            
+            response = requests.post(url, headers=headers, files=files, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                analysis_id = data.get('data', {}).get('id')
+                print(f"✅ Upload successful, analysis ID: {analysis_id}")
+                return True
+            else:
+                print(f"❌ Upload failed: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Upload error: {e}")
+            return False
     
     def quarantine_malicious_file(self, file_path):
         """
@@ -158,8 +221,8 @@ class FileMonitorHandler(FileSystemEventHandler):
         """
         if not event.is_directory:
             print(f"\033[96m📄 New file detected: {event.src_path}\033[0m")
-            # Add small delay to ensure file is fully written
-            time.sleep(0.5)
+            # Add delay to ensure file is fully written
+            time.sleep(1.0)
             self.scan_file_with_virustotal(event.src_path)
     
     def on_modified(self, event):
@@ -167,9 +230,31 @@ class FileMonitorHandler(FileSystemEventHandler):
         Triggered when a file is modified.
         """
         if not event.is_directory:
-            print(f"\033[96m📝 File modified: {event.src_path}\033[0m")
-            time.sleep(0.5)
-            self.scan_file_with_virustotal(event.src_path)
+            # Only scan if file was significantly modified (avoid temp file spam)
+            try:
+                if os.path.getsize(event.src_path) > 1024:  # Only scan files > 1KB
+                    print(f"\033[96m📝 File modified: {event.src_path}\033[0m")
+                    time.sleep(1.0)
+                    self.scan_file_with_virustotal(event.src_path)
+            except:
+                pass
+    
+    def scan_directory(self, directory_path):
+        """
+        Manually scan all files in a directory
+        """
+        print(f"\n🔍 Starting directory scan: {directory_path}")
+        scanned_count = 0
+        
+        for root, dirs, files in os.walk(directory_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                if not self._should_skip_file(file_path):
+                    self.scan_file_with_virustotal(file_path)
+                    scanned_count += 1
+                    time.sleep(0.5)  # Rate limiting
+        
+        print(f"✅ Directory scan complete. Scanned {scanned_count} files.")
 
 class IntegratedRTDSMonitor:
     """
@@ -213,6 +298,10 @@ class IntegratedRTDSMonitor:
         self.start_time: float = time.time()
         self.last_reset: float = time.time()
         
+        # Real-time packet tracking for dashboard
+        self.current_second_packets = 0
+        self.last_packet_log = time.time()
+        
         # --- File Monitoring Components ---
         self.file_observer = None
         self.file_handler = None
@@ -223,6 +312,10 @@ class IntegratedRTDSMonitor:
         except Exception:
             self.local_ip: str = "Unknown"
             print(f"[!] Warning: Could not get local IP for interface '{self.iface}'. Check interface name or permissions.")
+        
+        # --- IP Blocking System ---
+        self.ip_blocker = IPBlocker(log_callback=self.log_alert)
+        print(f"[*] IP Blocker initialized - Whitelist entries: {len(self.ip_blocker.whitelist)}")
 
     def log_alert(self, message: str, attack_type: str = "UNKNOWN"):
         """
@@ -238,6 +331,16 @@ class IntegratedRTDSMonitor:
                 f.write(f"[{timestamp}] [{attack_type}] {message}\n")
         except Exception as e:
             print(f"[!] Log file error: {e}")
+    
+    def log_packet_stats(self):
+        """Log current packet statistics for dashboard"""
+        try:
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            stats_msg = f"PACKET_STATS: total={self.total_packets}, current_rate={self.current_second_packets}/sec"
+            with open(self.log_file, "a", encoding='utf-8') as f:
+                f.write(f"[{timestamp}] [PACKET_STATS] {stats_msg}\n")
+        except Exception as e:
+            print(f"[!] Packet stats log error: {e}")
 
     def detect_ddos_attack(self, packet):
         """
@@ -255,6 +358,7 @@ class IntegratedRTDSMonitor:
         # Increment counts for the source IP.
         self.packet_counts[src_ip] += 1
         self.total_packets += 1
+        self.current_second_packets += 1
 
         # Check for SYN flag for SYN flood detection.
         if packet.haslayer(TCP) and packet[TCP].flags == 2:  # 0x02 is the SYN flag
@@ -266,6 +370,14 @@ class IntegratedRTDSMonitor:
         """
         current_time = time.time()
         if current_time - self.last_reset >= 1.0:
+            # Cleanup expired IP blocks
+            self.ip_blocker.cleanup_expired_blocks()
+            
+            # Log packet statistics for dashboard
+            if current_time - self.last_packet_log >= 1.0:
+                self.log_packet_stats()
+                self.last_packet_log = current_time
+            
             # Volumetric DDoS Check
             for ip, count in self.packet_counts.items():
                 if count > self.ddos_threshold:
@@ -273,6 +385,10 @@ class IntegratedRTDSMonitor:
                     alert_msg = f"🚨 DDoS Attack from {ip} - Rate: {count} packets/sec"
                     print(f"\033[91m{alert_msg}\033[0m")
                     self.log_alert(alert_msg, "DDOS")
+                    
+                    # Block the attacking IP
+                    if self.ip_blocker.block_ip(ip, f"DDoS attack - {count} pps", duration=3600):
+                        print(f"\033[93m🚫 Auto-blocked IP: {ip} for DDoS attack\033[0m")
 
             # SYN Flood Check
             for ip, count in self.syn_counts.items():
@@ -281,10 +397,15 @@ class IntegratedRTDSMonitor:
                     alert_msg = f"🚨 SYN Flood from {ip} - Rate: {count} SYN packets/sec"
                     print(f"\033[91m{alert_msg}\033[0m")
                     self.log_alert(alert_msg, "SYN_FLOOD")
+                    
+                    # Block the attacking IP
+                    if self.ip_blocker.block_ip(ip, f"SYN flood - {count} SYN/sec", duration=1800):
+                        print(f"\033[93m🚫 Auto-blocked IP: {ip} for SYN flood\033[0m")
 
             # Reset counts for the next second.
             self.packet_counts.clear()
             self.syn_counts.clear()
+            self.current_second_packets = 0
             self.last_reset = current_time
 
     def detect_mitm_attack(self, packet):
@@ -315,6 +436,10 @@ class IntegratedRTDSMonitor:
             )
             print(f"\033[93m{alert_msg}\033[0m")
             self.log_alert(alert_msg, "MITM")
+            
+            # Block the spoofing IP
+            if self.ip_blocker.block_ip(src_ip, f"ARP spoofing - MAC conflict", duration=7200):
+                print(f"\033[93m🚫 Auto-blocked IP: {src_ip} for ARP spoofing\033[0m")
         
         # Update the ARP table
         self.arp_table[src_ip] = src_mac
@@ -366,10 +491,24 @@ class IntegratedRTDSMonitor:
             self.file_observer.schedule(self.file_handler, self.monitor_path, recursive=True)
             self.file_observer.start()
             print(f"[*] File monitoring started on: {self.monitor_path}")
+            
+            # Perform initial scan of existing files
+            print("[*] Performing initial scan of existing files...")
+            threading.Thread(target=self._initial_directory_scan, daemon=True).start()
+            
             return True
         except Exception as e:
             print(f"[!] Failed to start file monitoring: {e}")
             return False
+    
+    def _initial_directory_scan(self):
+        """Scan existing files in the monitored directory"""
+        try:
+            time.sleep(2)  # Wait for system to stabilize
+            if self.file_handler:
+                self.file_handler.scan_directory(self.monitor_path)
+        except Exception as e:
+            print(f"[!] Initial scan error: {e}")
 
     def show_statistics(self):
         """

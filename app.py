@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import json
@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict, deque
 import sqlite3
 from contextlib import contextmanager
+from ip_blocker import IPBlocker
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'rtds_secret_key_2024'
@@ -40,6 +41,9 @@ class RTDSDataStore:
         # Network devices
         self.network_devices = {}
         self.last_device_scan = 0
+        
+        # IP Blocker for dashboard management
+        self.ip_blocker = IPBlocker()
         
         # Initialize packet timeline
         for i in range(60):
@@ -267,6 +271,90 @@ def get_network_devices():
     
     return jsonify(devices_list)
 
+# IP Blocker Management Endpoints
+@app.route('/api/blocked-ips')
+def get_blocked_ips():
+    """Get list of currently blocked IPs"""
+    blocked_ips = data_store.ip_blocker.get_blocked_ips()
+    formatted_blocks = []
+    
+    for ip, block_info in blocked_ips.items():
+        expires = block_info.get('expires', 0)
+        remaining = max(0, expires - time.time()) if expires > 0 else 0
+        
+        formatted_blocks.append({
+            'ip': ip,
+            'reason': block_info.get('reason', 'Unknown'),
+            'blocked_at': datetime.fromtimestamp(block_info['timestamp']).strftime('%Y-%m-%d %H:%M:%S'),
+            'duration': block_info.get('duration', 0),
+            'expires': expires,
+            'remaining_seconds': int(remaining),
+            'is_permanent': expires == 0
+        })
+    
+    return jsonify(formatted_blocks)
+
+@app.route('/api/block-ip', methods=['POST'])
+def block_ip():
+    """Block an IP address"""
+    data = request.get_json()
+    ip = data.get('ip', '').strip()
+    reason = data.get('reason', 'Manual block from dashboard')
+    duration = int(data.get('duration', 3600))  # Default 1 hour
+    
+    if not ip:
+        return jsonify({'success': False, 'message': 'IP address is required'}), 400
+    
+    success = data_store.ip_blocker.block_ip(ip, reason, duration)
+    
+    if success:
+        return jsonify({'success': True, 'message': f'IP {ip} blocked successfully'})
+    else:
+        return jsonify({'success': False, 'message': f'Failed to block IP {ip}'}), 400
+
+@app.route('/api/unblock-ip', methods=['POST'])
+def unblock_ip():
+    """Unblock an IP address"""
+    data = request.get_json()
+    ip = data.get('ip', '').strip()
+    
+    if not ip:
+        return jsonify({'success': False, 'message': 'IP address is required'}), 400
+    
+    success = data_store.ip_blocker.unblock_ip(ip)
+    
+    if success:
+        return jsonify({'success': True, 'message': f'IP {ip} unblocked successfully'})
+    else:
+        return jsonify({'success': False, 'message': f'Failed to unblock IP {ip}'}), 400
+
+@app.route('/api/block-stats')
+def get_block_stats():
+    """Get IP blocking statistics"""
+    stats = data_store.ip_blocker.get_block_stats()
+    return jsonify(stats)
+
+@app.route('/api/emergency-unblock', methods=['POST'])
+def emergency_unblock():
+    """Emergency unblock all IPs"""
+    data_store.ip_blocker.emergency_unblock_all()
+    return jsonify({'success': True, 'message': 'All IP blocks removed'})
+
+@app.route('/api/add-whitelist', methods=['POST'])
+def add_to_whitelist():
+    """Add IP or range to whitelist"""
+    data = request.get_json()
+    ip_or_range = data.get('ip_or_range', '').strip()
+    
+    if not ip_or_range:
+        return jsonify({'success': False, 'message': 'IP address or range is required'}), 400
+    
+    try:
+        data_store.ip_blocker.add_to_whitelist(ip_or_range)
+        return jsonify({'success': True, 'message': f'Added {ip_or_range} to whitelist'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Failed to add to whitelist: {str(e)}'}), 400
+
 # WebSocket events for real-time updates
 @socketio.on('connect')
 def handle_connect():
@@ -315,6 +403,11 @@ def parse_log_entry(log_line):
                 attack_type = parts[1][1:]    # Remove opening [
                 message = parts[2]
                 
+                # Handle packet statistics
+                if attack_type == 'PACKET_STATS':
+                    parse_packet_stats(message)
+                    return
+                
                 # Determine if it's a network attack or file scan
                 if attack_type in ['DDOS', 'SYN_FLOOD', 'MITM']:
                     # Extract source IP if available
@@ -347,7 +440,7 @@ def parse_log_entry(log_line):
                     # Emit real-time update
                     socketio.emit('new_attack', attack_data)
                     
-                elif attack_type in ['MALWARE', 'SUSPICIOUS', 'NEW_FILE', 'QUARANTINED', 'DELETED']:
+                elif attack_type in ['MALWARE', 'SUSPICIOUS', 'NEW_FILE', 'QUARANTINED', 'DELETED', 'CLEAN', 'UPLOADED']:
                     # Parse filename from message
                     filename = 'Unknown'
                     if ':' in message:
@@ -357,9 +450,9 @@ def parse_log_entry(log_line):
                             pass
                     
                     detections = 0
-                    if 'detections:' in message:
+                    if 'detections:' in message or 'Detections:' in message:
                         try:
-                            detections = int(message.split('detections:')[1].split()[0])
+                            detections = int(message.split('etections:')[1].split('/')[0].strip())
                         except:
                             pass
                     
@@ -383,14 +476,35 @@ def parse_log_entry(log_line):
                     # Emit real-time update
                     socketio.emit('new_file_scan', file_data)
                 
-                # Update packet stats (simulated - you can integrate with actual packet counter)
-                data_store.update_packet_stats(1)
-                
                 # Emit stats update
                 socketio.emit('stats_update', data_store.stats)
                 
     except Exception as e:
         print(f"Error parsing log entry: {e}")
+
+def parse_packet_stats(message):
+    """Parse packet statistics from log message"""
+    try:
+        # Parse: PACKET_STATS: total=1234, current_rate=56/sec
+        if 'total=' in message and 'current_rate=' in message:
+            total_part = message.split('total=')[1].split(',')[0]
+            rate_part = message.split('current_rate=')[1].split('/sec')[0]
+            
+            total_packets = int(total_part)
+            current_rate = int(rate_part)
+            
+            # Update data store
+            data_store.stats['total_packets'] = total_packets
+            
+            # Add to packet timeline
+            data_store.packet_timeline.append({
+                'timestamp': time.time(),
+                'packets': current_rate,
+                'attacks': 0
+            })
+            
+    except Exception as e:
+        print(f"Error parsing packet stats: {e}")
 
 # Background tasks
 def start_background_tasks():
@@ -449,7 +563,7 @@ if __name__ == '__main__':
     
     try:
         # Run the Flask-SocketIO server
-        socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+        socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
         print("\n🛑 Server stopped by user")
     except Exception as e:
