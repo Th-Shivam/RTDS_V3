@@ -1,0 +1,35 @@
+{
+  "phishing_urls": [
+    "https://paypal-security-verification.com",
+    "https://facebook-login-verify.net",
+    "https://google-account-security.org",
+    "https://amazon-account-update.com",
+    "https://apple-id-verification.net",
+    "https://microsoft-support-center.org",
+    "https://netflix-account-suspended.com",
+    "https://twitter-account-verify.net",
+    "https://instagram-login-security.org",
+    "https://whatsapp-verification.com"
+  ],
+  "suspicious_domains": [
+    "paypal-security-verification.com",
+    "facebook-login-verify.net",
+    "google-account-security.org",
+    "amazon-account-update.com",
+    "apple-id-verification.net",
+    "microsoft-support-center.org",
+    "netflix-account-suspended.com",
+    "twitter-account-verify.net",
+    "instagram-login-security.org",
+    "whatsapp-verification.com",
+    "bit.ly",
+    "tinyurl.com",
+    "short.link",
+    "t.co",
+    "goo.gl",
+    "is.gd",
+    "v.gd",
+    "ow.ly"
+  ],
+  "last_updated": "2024-01-20T00:00:00.000Z"
+}

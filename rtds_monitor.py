@@ -13,6 +13,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from ip_blocker import IPBlocker
 from email_notifier import EmailNotifier
+from phishing_detector import PhishingDetector
 
 # Load environment variables
 load_dotenv()
@@ -335,6 +336,10 @@ class IntegratedRTDSMonitor:
             print(f"[*] Email notifications enabled - SMTP: {self.email_notifier.config['smtp_server']}")
         else:
             print("[*] Email notifications disabled - Configure email settings to enable")
+        
+        # --- Phishing Detection System ---
+        self.phishing_detector = PhishingDetector(log_callback=self.log_alert)
+        print(f"[*] Phishing detection enabled - Database entries: {len(self.phishing_detector.known_phishing_urls)}")
 
     def log_alert(self, message: str, attack_type: str = "UNKNOWN"):
         """
@@ -489,6 +494,54 @@ class IntegratedRTDSMonitor:
         # Only show new device mapping for genuinely new devices
         if src_ip not in self.arp_table or len(self.arp_table) < 10:
             print(f"\033[92m✅ Device mapped: {src_ip} → {src_mac}\033[0m")
+    
+    def detect_phishing_attempts(self, packet):
+        """
+        Detect phishing attempts in network traffic
+        """
+        try:
+            if not packet.haslayer(IP):
+                return
+            
+            # Extract packet data for phishing analysis
+            packet_data = {
+                'src_ip': packet[IP].src,
+                'dst_ip': packet[IP].dst,
+                'protocol': 'unknown',
+                'payload': ''
+            }
+            
+            # Check for HTTP traffic
+            if packet.haslayer(TCP):
+                packet_data['protocol'] = 'tcp'
+                # Extract payload for URL analysis
+                if hasattr(packet, 'load'):
+                    packet_data['payload'] = str(packet.load)
+            
+            # Scan for phishing attempts
+            phishing_detections = self.phishing_detector.scan_network_traffic(packet_data)
+            
+            for detection in phishing_detections:
+                if detection['is_phishing']:
+                    self.total_attacks += 1
+                    alert_msg = f"🎣 PHISHING DETECTED: {detection['url']} - Confidence: {detection['confidence']:.2f} - Severity: {detection['severity']}"
+                    print(f"\033[91m{alert_msg}\033[0m")
+                    self.log_alert(alert_msg, "PHISHING")
+                    
+                    # Send email alert for phishing
+                    self.email_notifier.send_alert(
+                        alert_type="Phishing Attempt",
+                        source=packet_data['src_ip'],
+                        details=f"Phishing URL detected: {detection['url']}. Confidence: {detection['confidence']:.2f}. Reasons: {', '.join(detection['reasons'])}",
+                        severity=detection['severity']
+                    )
+                    
+                    # Block the source IP for phishing
+                    if self.ip_blocker.block_ip(packet_data['src_ip'], f"Phishing attempt - {detection['url']}", duration=7200):
+                        print(f"\033[93m🚫 Auto-blocked IP: {packet_data['src_ip']} for phishing attempt\033[0m")
+        
+        except Exception as e:
+            print(f"[!] Phishing detection error: {e}")
 
     def analyze_packet(self, packet):
         """
@@ -498,6 +551,7 @@ class IntegratedRTDSMonitor:
             self.detect_ddos_attack(packet)
             self.check_thresholds()
             self.detect_mitm_attack(packet)
+            self.detect_phishing_attempts(packet)
         except Exception as e:
             print(f"[!] Packet analysis error: {e}")
 

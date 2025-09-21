@@ -13,6 +13,7 @@ import sqlite3
 from contextlib import contextmanager
 from ip_blocker import IPBlocker
 from email_notifier import EmailNotifier
+from phishing_detector import PhishingDetector
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'rtds_secret_key_2024'
@@ -48,6 +49,9 @@ class RTDSDataStore:
         
         # Email Notifier for dashboard management
         self.email_notifier = EmailNotifier()
+        
+        # Phishing Detector for dashboard management
+        self.phishing_detector = PhishingDetector()
         
         # Initialize packet timeline
         for i in range(60):
@@ -389,6 +393,53 @@ def send_daily_report():
         return jsonify({'success': True, 'message': 'Daily report sent successfully'})
     except Exception as e:
         return jsonify({'success': False, 'message': f'Failed to send daily report: {str(e)}'}), 400
+
+# Phishing Detection Endpoints
+@app.route('/api/phishing-stats')
+def get_phishing_stats():
+    """Get phishing detection statistics"""
+    stats = data_store.phishing_detector.get_detection_stats()
+    return jsonify(stats)
+
+@app.route('/api/scan-url', methods=['POST'])
+def scan_url():
+    """Scan a URL for phishing"""
+    data = request.get_json()
+    url = data.get('url', '').strip()
+    
+    if not url:
+        return jsonify({'success': False, 'message': 'URL is required'}), 400
+    
+    try:
+        result = data_store.phishing_detector.detect_phishing_url(url)
+        return jsonify({
+            'success': True,
+            'result': result
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Failed to scan URL: {str(e)}'}), 400
+
+@app.route('/api/add-phishing-url', methods=['POST'])
+def add_phishing_url():
+    """Add URL to phishing database"""
+    data = request.get_json()
+    url = data.get('url', '').strip()
+    reason = data.get('reason', 'Manual addition from dashboard')
+    
+    if not url:
+        return jsonify({'success': False, 'message': 'URL is required'}), 400
+    
+    try:
+        data_store.phishing_detector.add_phishing_url(url, reason)
+        return jsonify({'success': True, 'message': f'Added {url} to phishing database'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Failed to add URL: {str(e)}'}), 400
+
+@app.route('/api/recent-phishing')
+def get_recent_phishing():
+    """Get recent phishing detections"""
+    # This would be implemented with a proper database in production
+    return jsonify([])
 
 # WebSocket events for real-time updates
 @socketio.on('connect')

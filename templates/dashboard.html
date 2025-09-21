@@ -768,6 +768,44 @@
             </div>
         </div>
 
+        <!-- Phishing Detection -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">🎣 Phishing Detection</h3>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" onclick="showURLScanModal()">🔍 Scan URL</button>
+                    <button class="btn btn-warning" onclick="showAddPhishingModal()">➕ Add Phishing URL</button>
+                </div>
+            </div>
+            
+            <!-- Phishing Statistics -->
+            <div class="stats-grid" style="margin-bottom: 20px;">
+                <div class="stat-item">
+                    <div class="stat-value" id="phishingScans">0</div>
+                    <div class="stat-label">URLs Scanned</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="phishingDetected">0</div>
+                    <div class="stat-label">Phishing Detected</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="suspiciousDomains">0</div>
+                    <div class="stat-label">Suspicious Domains</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="blockedURLs">0</div>
+                    <div class="stat-label">Blocked URLs</div>
+                </div>
+            </div>
+            
+            <div id="phishingDetections" class="alert-list">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading phishing detection data...</p>
+                </div>
+            </div>
+        </div>
+
         <!-- System Controls -->
         <div class="card">
             <div class="card-header">
@@ -1130,6 +1168,12 @@
                 .then(response => response.json())
                 .then(data => updateEmailStatus(data))
                 .catch(error => console.error('Error loading email status:', error));
+
+            // Load phishing stats
+            fetch('/api/phishing-stats')
+                .then(response => response.json())
+                .then(data => updatePhishingStats(data))
+                .catch(error => console.error('Error loading phishing stats:', error));
 
             // Update last refresh time
             document.getElementById('lastUpdate').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
@@ -1793,8 +1837,202 @@
             if (malwareFoundEl) animateValue(malwareFoundEl, 0, stats.total_malware_found, 1000);
             if (currentThreatsEl) animateValue(currentThreatsEl, 0, stats.current_threats, 1000);
             
-            document.getElementById('uptime').textContent = stats.uptime || '00:00:00';
+            // Don't update uptime from server stats - use real-time tracking
+            // document.getElementById('uptime').textContent = stats.uptime || '00:00:00';
         }
+
+        // Phishing Detection Functions
+        function updatePhishingStats(stats) {
+            document.getElementById('phishingScans').textContent = formatNumber(stats.total_scans || 0);
+            document.getElementById('phishingDetected').textContent = formatNumber(stats.phishing_detected || 0);
+            document.getElementById('suspiciousDomains').textContent = formatNumber(stats.suspicious_domains || 0);
+            document.getElementById('blockedURLs').textContent = formatNumber(stats.blocked_urls || 0);
+        }
+
+        function showURLScanModal() {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center;
+                z-index: 10000;
+            `;
+            
+            modal.innerHTML = `
+                <div style="background: #1a1a2e; padding: 2rem; border-radius: 12px; max-width: 500px; width: 90%;">
+                    <h3 style="margin-bottom: 1rem; color: #fff;">🔍 Scan URL for Phishing</h3>
+                    <div style="margin-bottom: 1rem;">
+                        <label style="color: #ccc; display: block; margin-bottom: 0.5rem;">URL to Scan:</label>
+                        <input type="url" id="scanURL" placeholder="https://example.com" style="width: 100%; padding: 0.5rem; border: 1px solid #444; background: #2a2a3e; color: #fff; border-radius: 4px;">
+                    </div>
+                    <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                        <button onclick="closeModal()" class="btn" style="background: #666; color: #fff;">Cancel</button>
+                        <button onclick="scanURL()" class="btn btn-primary">Scan URL</button>
+                    </div>
+                    <div id="scanResult" style="margin-top: 1rem; padding: 1rem; border-radius: 8px; display: none;"></div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            modal.onclick = (e) => { if (e.target === modal) closeModal(); };
+            
+            window.closeModal = () => document.body.removeChild(modal);
+        }
+
+        function scanURL() {
+            const url = document.getElementById('scanURL').value.trim();
+            if (!url) {
+                showNotification('Please enter a URL to scan', 'warning');
+                return;
+            }
+            
+            fetch('/api/scan-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    displayScanResult(data.result);
+                } else {
+                    showNotification(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                showNotification('Error scanning URL', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        function displayScanResult(result) {
+            const resultDiv = document.getElementById('scanResult');
+            const severity = result.is_phishing ? 'danger' : 'success';
+            const icon = result.is_phishing ? '🚨' : '✅';
+            const status = result.is_phishing ? 'PHISHING DETECTED' : 'SAFE';
+            
+            resultDiv.innerHTML = `
+                <div style="background: ${result.is_phishing ? 'rgba(244, 67, 54, 0.2)' : 'rgba(76, 175, 80, 0.2)'}; 
+                            border: 1px solid ${result.is_phishing ? '#f44336' : '#4caf50'}; 
+                            padding: 1rem; border-radius: 8px;">
+                    <h4 style="color: ${result.is_phishing ? '#f44336' : '#4caf50'}; margin-bottom: 0.5rem;">
+                        ${icon} ${status}
+                    </h4>
+                    <p><strong>URL:</strong> ${result.url}</p>
+                    <p><strong>Confidence:</strong> ${(result.confidence * 100).toFixed(1)}%</p>
+                    <p><strong>Severity:</strong> ${result.severity}</p>
+                    ${result.reasons.length > 0 ? `<p><strong>Reasons:</strong> ${result.reasons.join(', ')}</p>` : ''}
+                </div>
+            `;
+            resultDiv.style.display = 'block';
+        }
+
+        function showAddPhishingModal() {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center;
+                z-index: 10000;
+            `;
+            
+            modal.innerHTML = `
+                <div style="background: #1a1a2e; padding: 2rem; border-radius: 12px; max-width: 500px; width: 90%;">
+                    <h3 style="margin-bottom: 1rem; color: #fff;">➕ Add Phishing URL</h3>
+                    <div style="margin-bottom: 1rem;">
+                        <label style="color: #ccc; display: block; margin-bottom: 0.5rem;">Phishing URL:</label>
+                        <input type="url" id="phishingURL" placeholder="https://suspicious-site.com" style="width: 100%; padding: 0.5rem; border: 1px solid #444; background: #2a2a3e; color: #fff; border-radius: 4px;">
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <label style="color: #ccc; display: block; margin-bottom: 0.5rem;">Reason:</label>
+                        <input type="text" id="phishingReason" placeholder="Manual addition from dashboard" style="width: 100%; padding: 0.5rem; border: 1px solid #444; background: #2a2a3e; color: #fff; border-radius: 4px;">
+                    </div>
+                    <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                        <button onclick="closeModal()" class="btn" style="background: #666; color: #fff;">Cancel</button>
+                        <button onclick="addPhishingURL()" class="btn btn-warning">Add to Database</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            modal.onclick = (e) => { if (e.target === modal) closeModal(); };
+            
+            window.closeModal = () => document.body.removeChild(modal);
+        }
+
+        function addPhishingURL() {
+            const url = document.getElementById('phishingURL').value.trim();
+            const reason = document.getElementById('phishingReason').value.trim() || 'Manual addition from dashboard';
+            
+            if (!url) {
+                showNotification('Please enter a URL', 'warning');
+                return;
+            }
+            
+            fetch('/api/add-phishing-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url, reason })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification(data.message, 'success');
+                    closeModal();
+                    // Refresh phishing stats
+                    fetch('/api/phishing-stats')
+                        .then(response => response.json())
+                        .then(data => updatePhishingStats(data));
+                } else {
+                    showNotification(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                showNotification('Error adding phishing URL', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        // Real-time Uptime Tracking System
+        let systemStartTime = Date.now();
+        let isUptimeRunning = true;
+        
+        function updateUptime() {
+            if (!isUptimeRunning) return;
+            
+            const now = Date.now();
+            const uptimeMs = now - systemStartTime;
+            const hours = Math.floor(uptimeMs / (1000 * 60 * 60));
+            const minutes = Math.floor((uptimeMs % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((uptimeMs % (1000 * 60)) / 1000);
+            
+            const uptimeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            const uptimeElement = document.getElementById('uptime');
+            if (uptimeElement) {
+                uptimeElement.textContent = uptimeString;
+            }
+        }
+        
+        // Start uptime tracking immediately
+        updateUptime();
+        
+        // Update uptime every second
+        setInterval(updateUptime, 1000);
+        
+        // Reset uptime when page loads (for fresh start)
+        function resetUptime() {
+            systemStartTime = Date.now();
+            isUptimeRunning = true;
+            updateUptime();
+        }
+        
+        // Pause uptime when page is not visible (optional)
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                isUptimeRunning = false;
+            } else {
+                isUptimeRunning = true;
+                updateUptime();
+            }
+        });
 
         // Add IP blocking data to initial load
         const originalLoadInitialData = loadInitialData;
