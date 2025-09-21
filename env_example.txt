@@ -1,0 +1,18 @@
+# RTDS Environment Configuration
+
+# VirusTotal API Key (for file scanning)
+VIRUSTOTAL_API_KEY=your_virustotal_api_key_here
+
+# Email Notification Settings
+EMAIL_ENABLED=true
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your_email@gmail.com
+SMTP_PASSWORD=your_app_password
+FROM_EMAIL=rtds@yourdomain.com
+TO_EMAILS=admin@yourdomain.com,security@yourdomain.com
+
+# Network Monitoring Settings (optional)
+DDOS_THRESHOLD=100
+SYN_THRESHOLD=50
+NETWORK_INTERFACE=Wi-Fi

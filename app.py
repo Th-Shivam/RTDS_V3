@@ -12,6 +12,7 @@ from collections import defaultdict, deque
 import sqlite3
 from contextlib import contextmanager
 from ip_blocker import IPBlocker
+from email_notifier import EmailNotifier
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'rtds_secret_key_2024'
@@ -44,6 +45,9 @@ class RTDSDataStore:
         
         # IP Blocker for dashboard management
         self.ip_blocker = IPBlocker()
+        
+        # Email Notifier for dashboard management
+        self.email_notifier = EmailNotifier()
         
         # Initialize packet timeline
         for i in range(60):
@@ -354,6 +358,37 @@ def add_to_whitelist():
         return jsonify({'success': True, 'message': f'Added {ip_or_range} to whitelist'})
     except Exception as e:
         return jsonify({'success': False, 'message': f'Failed to add to whitelist: {str(e)}'}), 400
+
+# Email Notification Management Endpoints
+@app.route('/api/email-status')
+def get_email_status():
+    """Get email notification status"""
+    status = data_store.email_notifier.get_status()
+    return jsonify(status)
+
+@app.route('/api/test-email', methods=['POST'])
+def test_email():
+    """Send test email"""
+    try:
+        data_store.email_notifier.send_alert(
+            alert_type="Test Alert",
+            source="RTDS Dashboard",
+            details="This is a test email from RTDS Dashboard to verify email configuration.",
+            severity="Low"
+        )
+        return jsonify({'success': True, 'message': 'Test email sent successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Failed to send test email: {str(e)}'}), 400
+
+@app.route('/api/send-daily-report', methods=['POST'])
+def send_daily_report():
+    """Send daily security report"""
+    try:
+        stats = data_store.stats.copy()
+        data_store.email_notifier.send_daily_report(stats)
+        return jsonify({'success': True, 'message': 'Daily report sent successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Failed to send daily report: {str(e)}'}), 400
 
 # WebSocket events for real-time updates
 @socketio.on('connect')

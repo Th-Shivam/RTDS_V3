@@ -1,0 +1,17 @@
+{
+  "enabled": false,
+  "smtp_server": "smtp.gmail.com",
+  "smtp_port": 587,
+  "username": "your_email@gmail.com",
+  "password": "your_app_password",
+  "from_email": "rtds@yourdomain.com",
+  "to_emails": [
+    "admin@yourdomain.com",
+    "security@yourdomain.com"
+  ],
+  "use_tls": true,
+  "use_ssl": false,
+  "subject_prefix": "[RTDS Alert]",
+  "max_retries": 3,
+  "retry_delay": 5
+}

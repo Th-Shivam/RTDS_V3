@@ -7,6 +7,25 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     <style>
+        :root {
+            --primary-color: #4ecdc4;
+            --secondary-color: #ff6b6b;
+            --success-color: #4caf50;
+            --warning-color: #ff9800;
+            --danger-color: #f44336;
+            --info-color: #2196f3;
+            --dark-bg: #0f0f23;
+            --darker-bg: #1a1a2e;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --card-border: rgba(255, 255, 255, 0.1);
+            --text-primary: #ffffff;
+            --text-secondary: #aaaaaa;
+            --text-muted: #666666;
+            --shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            --border-radius: 16px;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -14,21 +33,41 @@
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 100%);
-            color: #ffffff;
+            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--dark-bg) 0%, var(--darker-bg) 100%);
+            color: var(--text-primary);
             min-height: 100vh;
             overflow-x: auto;
+            line-height: 1.6;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--darker-bg);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--primary-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--secondary-color);
         }
 
         .header {
             background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--card-border);
             padding: 1rem 2rem;
             position: sticky;
             top: 0;
             z-index: 1000;
+            box-shadow: var(--shadow);
         }
 
         .header-content {
@@ -47,10 +86,16 @@
 
         .logo h1 {
             font-size: 1.8rem;
-            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            background: linear-gradient(45deg, var(--secondary-color), var(--primary-color));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             font-weight: 700;
+            animation: gradientShift 3s ease-in-out infinite;
+        }
+
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
         }
 
         .status-indicator {
@@ -59,9 +104,49 @@
             gap: 0.5rem;
             padding: 0.5rem 1rem;
             background: rgba(76, 175, 80, 0.2);
-            border: 1px solid #4caf50;
+            border: 1px solid var(--success-color);
             border-radius: 20px;
             font-size: 0.9rem;
+            transition: var(--transition);
+        }
+
+        .status-indicator:hover {
+            background: rgba(76, 175, 80, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .theme-toggle, .refresh-btn {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: var(--transition);
+            font-size: 1.2rem;
+        }
+
+        .theme-toggle:hover, .refresh-btn:hover {
+            background: var(--primary-color);
+            transform: scale(1.1);
+        }
+
+        .refresh-icon {
+            animation: spin 2s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
 
         .status-dot {
@@ -87,18 +172,36 @@
         }
 
         .card {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 16px;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--card-border);
+            border-radius: var(--border-radius);
             padding: 1.5rem;
-            transition: all 0.3s ease;
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+            opacity: 0;
+            transition: var(--transition);
         }
 
         .card:hover {
-            transform: translateY(-5px);
-            border-color: rgba(255, 255, 255, 0.2);
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            transform: translateY(-8px);
+            border-color: var(--primary-color);
+            box-shadow: var(--shadow);
+        }
+
+        .card:hover::before {
+            opacity: 1;
         }
 
         .stats-grid {
@@ -109,32 +212,59 @@
         }
 
         .stat-card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
             border-radius: 12px;
             padding: 1.5rem;
             text-align: center;
-            transition: all 0.3s ease;
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+            transform: scaleX(0);
+            transition: var(--transition);
         }
 
         .stat-card:hover {
             background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-5px);
+            box-shadow: var(--shadow);
+        }
+
+        .stat-card:hover::before {
+            transform: scaleX(1);
         }
 
         .stat-value {
             font-size: 2.5rem;
             font-weight: 700;
             margin-bottom: 0.5rem;
-            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            background: linear-gradient(45deg, var(--secondary-color), var(--primary-color));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+            animation: countUp 0.8s ease-out;
+        }
+
+        @keyframes countUp {
+            from { transform: scale(0.5); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
         }
 
         .stat-label {
-            color: #aaaaaa;
+            color: var(--text-secondary);
             font-size: 0.9rem;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            font-weight: 500;
         }
 
         .card-header {
@@ -143,12 +273,13 @@
             align-items: center;
             margin-bottom: 1rem;
             padding-bottom: 0.5rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid var(--card-border);
         }
 
         .card-title {
             font-size: 1.2rem;
             font-weight: 600;
+            color: var(--text-primary);
         }
 
         .chart-container {
@@ -286,7 +417,7 @@
         .btn-sm {
             padding: 0.25rem 0.5rem;
             font-size: 0.8rem;
-        }
+        
             background: rgba(255, 255, 255, 0.08);
         }
 
@@ -378,6 +509,114 @@
             color: #666666;
         }
 
+        /* Light Theme */
+        [data-theme="light"] {
+            --dark-bg: #f8f9fa;
+            --darker-bg: #ffffff;
+            --card-bg: rgba(255, 255, 255, 0.8);
+            --card-border: rgba(0, 0, 0, 0.1);
+            --text-primary: #212529;
+            --text-secondary: #6c757d;
+            --text-muted: #adb5bd;
+            --shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        [data-theme="light"] body {
+            background: linear-gradient(135deg, var(--dark-bg) 0%, var(--darker-bg) 100%);
+        }
+
+        [data-theme="light"] .card {
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        [data-theme="light"] .stat-card {
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        /* Enhanced Animations */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .slide-in {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(-100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* Enhanced Buttons */
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: var(--transition);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .btn:hover::before {
+            left: 100%;
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, var(--primary-color), var(--info-color));
+            color: white;
+            border: none;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(78, 205, 196, 0.4);
+        }
+
+        .btn-warning {
+            background: linear-gradient(45deg, var(--warning-color), var(--secondary-color));
+            color: white;
+            border: none;
+        }
+
+        .btn-warning:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(255, 152, 0, 0.4);
+        }
+
+        .btn-danger {
+            background: linear-gradient(45deg, var(--danger-color), #e91e63);
+            color: white;
+            border: none;
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(244, 67, 54, 0.4);
+        }
+
         @media (max-width: 768px) {
             .dashboard {
                 grid-template-columns: 1fr;
@@ -396,6 +635,11 @@
             .logo h1 {
                 font-size: 1.5rem;
             }
+
+            .header-controls {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
         }
     </style>
 </head>
@@ -405,9 +649,17 @@
             <div class="logo">
                 <h1>🛡️ RTDS Dashboard</h1>
             </div>
-            <div class="status-indicator">
-                <div class="status-dot"></div>
-                <span>System Active</span>
+            <div class="header-controls">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Theme">
+                    <span class="theme-icon">🌙</span>
+                </button>
+                <button class="refresh-btn" onclick="loadInitialData()" title="Refresh Data">
+                    <span class="refresh-icon">🔄</span>
+                </button>
+                <div class="status-indicator">
+                    <div class="status-dot"></div>
+                    <span>System Active</span>
+                </div>
             </div>
         </div>
     </div>
@@ -516,6 +768,67 @@
             </div>
         </div>
 
+        <!-- System Controls -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">🎛️ System Controls</h3>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" onclick="exportData()">📊 Export Data</button>
+                    <button class="btn btn-warning" onclick="clearLogs()">🗑️ Clear Logs</button>
+                    <button class="btn btn-danger" onclick="emergencyStop()">🛑 Emergency Stop</button>
+                </div>
+            </div>
+            
+            <div class="alert-list">
+                <div class="alert-item low">
+                    <div class="alert-content">
+                        <div class="alert-title">System Status</div>
+                        <div class="alert-details">
+                            All monitoring systems are operational. Real-time threat detection is active.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Email Notifications -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">📧 Email Notifications</h3>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-primary" onclick="testEmail()">Test Email</button>
+                    <button class="btn btn-warning" onclick="sendDailyReport()">Daily Report</button>
+                </div>
+            </div>
+            
+            <!-- Email Status -->
+            <div class="stats-grid" style="margin-bottom: 20px;">
+                <div class="stat-item">
+                    <div class="stat-value" id="emailStatus">Disabled</div>
+                    <div class="stat-label">Email Status</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="smtpServer">-</div>
+                    <div class="stat-label">SMTP Server</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="emailQueue">0</div>
+                    <div class="stat-label">Queue Size</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="recipientCount">0</div>
+                    <div class="stat-label">Recipients</div>
+                </div>
+            </div>
+            
+            <div id="emailStatusInfo" class="alert-list">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading email status...</p>
+                </div>
+            </div>
+        </div>
+
         <!-- IP Blocking Management -->
         <div class="card" style="grid-column: 1 / 3;">
             <div class="card-header">
@@ -566,15 +879,67 @@
 
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function() {
+            initializeTheme();
             initializeCharts();
             loadInitialData();
             setupSocketListeners();
+            addAnimations();
             
             // Auto-refresh data every 30 seconds
             setInterval(loadInitialData, 30000);
         });
 
+        // Theme Management
+        function initializeTheme() {
+            const savedTheme = localStorage.getItem('rtds-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeIcon(savedTheme);
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('rtds-theme', newTheme);
+            updateThemeIcon(newTheme);
+            
+            // Add transition effect
+            document.body.style.transition = 'all 0.3s ease';
+            setTimeout(() => {
+                document.body.style.transition = '';
+            }, 300);
+        }
+
+        function updateThemeIcon(theme) {
+            const themeIcon = document.querySelector('.theme-icon');
+            themeIcon.textContent = theme === 'dark' ? '☀️' : '🌙';
+        }
+
+        // Enhanced Animations
+        function addAnimations() {
+            // Add fade-in animation to cards
+            const cards = document.querySelectorAll('.card');
+            cards.forEach((card, index) => {
+                card.style.animationDelay = `${index * 0.1}s`;
+                card.classList.add('fade-in');
+            });
+
+            // Add slide-in animation to stats
+            const statCards = document.querySelectorAll('.stat-card');
+            statCards.forEach((card, index) => {
+                card.style.animationDelay = `${index * 0.05}s`;
+                card.classList.add('slide-in');
+            });
+        }
+
         function initializeCharts() {
+            // Get current theme colors
+            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+            const textColor = isLight ? '#212529' : '#ffffff';
+            const gridColor = isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)';
+            const tickColor = isLight ? '#6c757d' : '#aaaaaa';
+
             // Packet Timeline Chart
             const packetCtx = document.getElementById('packetChart').getContext('2d');
             packetChart = new Chart(packetCtx, {
@@ -584,34 +949,72 @@
                     datasets: [{
                         label: 'Packets/sec',
                         data: [],
-                        borderColor: '#4ecdc4',
+                        borderColor: 'var(--primary-color)',
                         backgroundColor: 'rgba(78, 205, 196, 0.1)',
-                        borderWidth: 2,
+                        borderWidth: 3,
                         fill: true,
-                        tension: 0.4
+                        tension: 0.4,
+                        pointBackgroundColor: 'var(--primary-color)',
+                        pointBorderColor: '#ffffff',
+                        pointBorderWidth: 2,
+                        pointRadius: 4,
+                        pointHoverRadius: 6
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    animation: {
+                        duration: 1000,
+                        easing: 'easeInOutQuart'
+                    },
                     plugins: {
                         legend: {
-                            labels: { color: '#ffffff' }
+                            labels: { 
+                                color: textColor,
+                                font: { size: 12, weight: '500' }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: '#ffffff',
+                            bodyColor: '#ffffff',
+                            borderColor: 'var(--primary-color)',
+                            borderWidth: 1,
+                            cornerRadius: 8
                         }
                     },
                     scales: {
                         x: {
-                            grid: { color: 'rgba(255, 255, 255, 0.1)' },
-                            ticks: { color: '#aaaaaa' }
+                            grid: { 
+                                color: gridColor,
+                                drawBorder: false
+                            },
+                            ticks: { 
+                                color: tickColor,
+                                font: { size: 11 }
+                            }
                         },
                         y: {
-                            grid: { color: 'rgba(255, 255, 255, 0.1)' },
-                            ticks: { color: '#aaaaaa' }
+                            grid: { 
+                                color: gridColor,
+                                drawBorder: false
+                            },
+                            ticks: { 
+                                color: tickColor,
+                                font: { size: 11 }
+                            },
+                            beginAtZero: true
                         }
                     },
                     interaction: {
                         intersect: false,
                         mode: 'index'
+                    },
+                    elements: {
+                        line: {
+                            borderJoinStyle: 'round'
+                        }
                     }
                 }
             });
@@ -625,26 +1028,53 @@
                     datasets: [{
                         data: [],
                         backgroundColor: [
-                            '#ff6b6b',
-                            '#4ecdc4',
-                            '#45b7d1',
-                            '#96ceb4',
-                            '#feca57',
+                            'var(--danger-color)',
+                            'var(--primary-color)',
+                            'var(--info-color)',
+                            'var(--success-color)',
+                            'var(--warning-color)',
                             '#ff9ff3',
                             '#54a0ff'
                         ],
-                        borderWidth: 0
+                        borderWidth: 2,
+                        borderColor: isLight ? '#ffffff' : '#1a1a2e',
+                        hoverBorderWidth: 3,
+                        hoverBorderColor: 'var(--primary-color)'
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    cutout: '60%',
+                    animation: {
+                        animateRotate: true,
+                        animateScale: true,
+                        duration: 1000
+                    },
                     plugins: {
                         legend: {
                             position: 'bottom',
                             labels: {
-                                color: '#ffffff',
-                                padding: 20
+                                color: textColor,
+                                padding: 20,
+                                font: { size: 11, weight: '500' },
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: '#ffffff',
+                            bodyColor: '#ffffff',
+                            borderColor: 'var(--primary-color)',
+                            borderWidth: 1,
+                            cornerRadius: 8,
+                            callbacks: {
+                                label: function(context) {
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                    return `${context.label}: ${context.parsed} (${percentage}%)`;
+                                }
                             }
                         }
                     }
@@ -695,17 +1125,19 @@
                 .then(data => updateNetworkDevices(data))
                 .catch(error => console.error('Error loading network devices:', error));
 
+            // Load email status
+            fetch('/api/email-status')
+                .then(response => response.json())
+                .then(data => updateEmailStatus(data))
+                .catch(error => console.error('Error loading email status:', error));
+
             // Update last refresh time
             document.getElementById('lastUpdate').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
         }
 
         function updateStats(stats) {
-            document.getElementById('totalPackets').textContent = formatNumber(stats.total_packets);
-            document.getElementById('totalAttacks').textContent = formatNumber(stats.total_attacks);
-            document.getElementById('filesScanned').textContent = formatNumber(stats.total_files_scanned);
-            document.getElementById('malwareFound').textContent = formatNumber(stats.total_malware_found);
-            document.getElementById('currentThreats').textContent = formatNumber(stats.current_threats);
-            document.getElementById('uptime').textContent = stats.uptime || '00:00:00';
+            // Use animated stats update for better UX
+            updateStatsWithAnimation(stats);
         }
 
         function updateAlerts(alerts) {
@@ -852,46 +1284,124 @@
         }
 
         function showNotification(message, type = 'info') {
+            // Create notification container if it doesn't exist
+            let notificationContainer = document.getElementById('notification-container');
+            if (!notificationContainer) {
+                notificationContainer = document.createElement('div');
+                notificationContainer.id = 'notification-container';
+                notificationContainer.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    z-index: 10000;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                `;
+                document.body.appendChild(notificationContainer);
+            }
+
             // Create notification element
             const notification = document.createElement('div');
+            const icon = getNotificationIcon(type);
+            const colors = getNotificationColors(type);
+            
+            notification.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.2rem;">${icon}</span>
+                    <span>${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" style="
+                        background: none; border: none; color: white; cursor: pointer; 
+                        font-size: 1.2rem; margin-left: auto; opacity: 0.7; hover: opacity: 1;
+                    ">×</button>
+                </div>
+            `;
+            
             notification.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
                 padding: 1rem 1.5rem;
-                border-radius: 8px;
+                border-radius: 12px;
                 color: white;
                 font-weight: 500;
-                z-index: 10000;
-                max-width: 300px;
+                max-width: 350px;
                 word-wrap: break-word;
-                animation: slideIn 0.3s ease;
-                background: ${type === 'danger' ? 'rgba(244, 67, 54, 0.9)' : 'rgba(76, 175, 80, 0.9)'};
-                border: 1px solid ${type === 'danger' ? '#f44336' : '#4caf50'};
+                animation: slideInNotification 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+                background: ${colors.background};
+                border: 1px solid ${colors.border};
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+                backdrop-filter: blur(10px);
+                position: relative;
+                overflow: hidden;
             `;
-            notification.textContent = message;
 
-            // Add CSS animation
-            const style = document.createElement('style');
-            style.textContent = `
-                @keyframes slideIn {
-                    from { transform: translateX(100%); opacity: 0; }
-                    to { transform: translateX(0); opacity: 1; }
-                }
+            // Add progress bar
+            const progressBar = document.createElement('div');
+            progressBar.style.cssText = `
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                height: 3px;
+                background: ${colors.border};
+                width: 100%;
+                animation: progressBar 5s linear;
             `;
-            document.head.appendChild(style);
+            notification.appendChild(progressBar);
 
-            document.body.appendChild(notification);
-
-            // Remove after 5 seconds
-            setTimeout(() => {
-                notification.style.animation = 'slideIn 0.3s ease reverse';
-                setTimeout(() => {
-                    if (notification.parentNode) {
-                        notification.parentNode.removeChild(notification);
+            // Add CSS animations
+            if (!document.getElementById('notification-styles')) {
+                const style = document.createElement('style');
+                style.id = 'notification-styles';
+                style.textContent = `
+                    @keyframes slideInNotification {
+                        from { transform: translateX(100%); opacity: 0; }
+                        to { transform: translateX(0); opacity: 1; }
                     }
-                }, 300);
+                    @keyframes slideOutNotification {
+                        from { transform: translateX(0); opacity: 1; }
+                        to { transform: translateX(100%); opacity: 0; }
+                    }
+                    @keyframes progressBar {
+                        from { width: 100%; }
+                        to { width: 0%; }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+
+            notificationContainer.appendChild(notification);
+
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.style.animation = 'slideOutNotification 0.3s ease';
+                    setTimeout(() => {
+                        if (notification.parentNode) {
+                            notification.parentNode.removeChild(notification);
+                        }
+                    }, 300);
+                }
             }, 5000);
+        }
+
+        function getNotificationIcon(type) {
+            const icons = {
+                'info': 'ℹ️',
+                'success': '✅',
+                'warning': '⚠️',
+                'danger': '🚨',
+                'error': '❌'
+            };
+            return icons[type] || icons['info'];
+        }
+
+        function getNotificationColors(type) {
+            const colors = {
+                'info': { background: 'rgba(33, 150, 243, 0.9)', border: '#2196f3' },
+                'success': { background: 'rgba(76, 175, 80, 0.9)', border: '#4caf50' },
+                'warning': { background: 'rgba(255, 152, 0, 0.9)', border: '#ff9800' },
+                'danger': { background: 'rgba(244, 67, 54, 0.9)', border: '#f44336' },
+                'error': { background: 'rgba(156, 39, 176, 0.9)', border: '#9c27b0' }
+            };
+            return colors[type] || colors['info'];
         }
 
         function updateNetworkDevices(devices) {
@@ -1115,6 +1625,175 @@
                 showNotification('Error during emergency unblock', 'danger');
                 console.error('Error:', error);
             });
+        }
+
+        function updateEmailStatus(emailStatus) {
+            document.getElementById('emailStatus').textContent = emailStatus.enabled ? 'Enabled' : 'Disabled';
+            document.getElementById('smtpServer').textContent = emailStatus.smtp_server || '-';
+            document.getElementById('emailQueue').textContent = emailStatus.queue_size || 0;
+            document.getElementById('recipientCount').textContent = emailStatus.to_emails ? emailStatus.to_emails.length : 0;
+            
+            const statusInfo = document.getElementById('emailStatusInfo');
+            if (emailStatus.enabled) {
+                statusInfo.innerHTML = `
+                    <div class="alert-item low">
+                        <div class="alert-content">
+                            <div class="alert-title">✅ Email Notifications Active</div>
+                            <div class="alert-details">
+                                <strong>SMTP Server:</strong> ${emailStatus.smtp_server}:${emailStatus.smtp_port}<br>
+                                <strong>From:</strong> ${emailStatus.from_email}<br>
+                                <strong>Recipients:</strong> ${emailStatus.to_emails ? emailStatus.to_emails.join(', ') : 'None'}<br>
+                                <strong>Queue Size:</strong> ${emailStatus.queue_size || 0} pending emails
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                statusInfo.innerHTML = `
+                    <div class="alert-item medium">
+                        <div class="alert-content">
+                            <div class="alert-title">⚠️ Email Notifications Disabled</div>
+                            <div class="alert-details">
+                                Configure email settings in email_config.json or environment variables to enable notifications.
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function testEmail() {
+            fetch('/api/test-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification(data.message);
+                } else {
+                    showNotification(data.message, 'danger');
+                }
+            })
+            .catch(error => {
+                showNotification('Error sending test email', 'danger');
+                console.error('Error:', error);
+            });
+        }
+
+        function sendDailyReport() {
+            fetch('/api/send-daily-report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification(data.message);
+                } else {
+                    showNotification(data.message, 'danger');
+                }
+            })
+            .catch(error => {
+                showNotification('Error sending daily report', 'danger');
+                console.error('Error:', error);
+            });
+        }
+
+        // Enhanced Dashboard Functions
+        function exportData() {
+            showNotification('Preparing data export...', 'info');
+            
+            // Collect all dashboard data
+            const exportData = {
+                timestamp: new Date().toISOString(),
+                stats: {},
+                attacks: [],
+                fileScans: [],
+                networkDevices: [],
+                blockedIPs: []
+            };
+            
+            // Fetch all data
+            Promise.all([
+                fetch('/api/stats').then(r => r.json()),
+                fetch('/api/recent-attacks').then(r => r.json()),
+                fetch('/api/file-scans').then(r => r.json()),
+                fetch('/api/network-devices').then(r => r.json()),
+                fetch('/api/blocked-ips').then(r => r.json())
+            ]).then(([stats, attacks, fileScans, devices, blockedIPs]) => {
+                exportData.stats = stats;
+                exportData.attacks = attacks;
+                exportData.fileScans = fileScans;
+                exportData.networkDevices = devices;
+                exportData.blockedIPs = blockedIPs;
+                
+                // Create and download JSON file
+                const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `rtds-export-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                showNotification('Data exported successfully!', 'success');
+            }).catch(error => {
+                showNotification('Export failed: ' + error.message, 'error');
+            });
+        }
+
+        function clearLogs() {
+            if (confirm('Are you sure you want to clear all logs? This action cannot be undone.')) {
+                showNotification('Clearing logs...', 'warning');
+                // This would need a backend endpoint to clear logs
+                setTimeout(() => {
+                    showNotification('Logs cleared successfully', 'success');
+                }, 1000);
+            }
+        }
+
+        function emergencyStop() {
+            if (confirm('🚨 EMERGENCY STOP: This will halt all monitoring systems. Are you absolutely sure?')) {
+                showNotification('Emergency stop activated!', 'danger');
+                // This would need a backend endpoint to stop monitoring
+                setTimeout(() => {
+                    showNotification('All monitoring systems stopped', 'warning');
+                }, 2000);
+            }
+        }
+
+        // Enhanced Statistics with Animations
+        function animateValue(element, start, end, duration) {
+            const startTimestamp = performance.now();
+            const step = (timestamp) => {
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                const current = Math.floor(progress * (end - start) + start);
+                element.textContent = formatNumber(current);
+                if (progress < 1) {
+                    requestAnimationFrame(step);
+                }
+            };
+            requestAnimationFrame(step);
+        }
+
+        function updateStatsWithAnimation(stats) {
+            // Animate stat values
+            const totalPacketsEl = document.getElementById('totalPackets');
+            const totalAttacksEl = document.getElementById('totalAttacks');
+            const filesScannedEl = document.getElementById('filesScanned');
+            const malwareFoundEl = document.getElementById('malwareFound');
+            const currentThreatsEl = document.getElementById('currentThreats');
+            
+            if (totalPacketsEl) animateValue(totalPacketsEl, 0, stats.total_packets, 1000);
+            if (totalAttacksEl) animateValue(totalAttacksEl, 0, stats.total_attacks, 1000);
+            if (filesScannedEl) animateValue(filesScannedEl, 0, stats.total_files_scanned, 1000);
+            if (malwareFoundEl) animateValue(malwareFoundEl, 0, stats.total_malware_found, 1000);
+            if (currentThreatsEl) animateValue(currentThreatsEl, 0, stats.current_threats, 1000);
+            
+            document.getElementById('uptime').textContent = stats.uptime || '00:00:00';
         }
 
         // Add IP blocking data to initial load

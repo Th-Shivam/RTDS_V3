@@ -12,6 +12,7 @@ from scapy.layers.l2 import ARP
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from ip_blocker import IPBlocker
+from email_notifier import EmailNotifier
 
 # Load environment variables
 load_dotenv()
@@ -76,6 +77,15 @@ class FileMonitorHandler(FileSystemEventHandler):
                     alert_msg = f"🦠 MALWARE DETECTED: {file_path} - Detections: {malicious_count}/{stats.get('total', 0)} engines"
                     print(f"\033[91m{alert_msg}\033[0m")
                     self.log_callback(alert_msg, "MALWARE")
+                    
+                    # Send malware alert via email
+                    if hasattr(self, 'email_notifier') and self.email_notifier:
+                        self.email_notifier.send_malware_alert(
+                            filename=os.path.basename(file_path),
+                            detections=malicious_count,
+                            action="QUARANTINED" if self.quarantine_dir else "DELETED"
+                        )
+                    
                     self.quarantine_malicious_file(file_path)
                 elif suspicious_count > 0:
                     alert_msg = f"⚠️ SUSPICIOUS FILE: {file_path} - Detections: {suspicious_count}/{stats.get('total', 0)} engines"
@@ -306,6 +316,9 @@ class IntegratedRTDSMonitor:
         self.file_observer = None
         self.file_handler = None
         
+        # Pass email notifier to file handler
+        self.email_notifier = EmailNotifier()
+        
         # --- Local Network Info ---
         try:
             self.local_ip: str = get_if_addr(self.iface)
@@ -316,6 +329,12 @@ class IntegratedRTDSMonitor:
         # --- IP Blocking System ---
         self.ip_blocker = IPBlocker(log_callback=self.log_alert)
         print(f"[*] IP Blocker initialized - Whitelist entries: {len(self.ip_blocker.whitelist)}")
+        
+        # Email notifier already initialized above
+        if self.email_notifier.is_enabled:
+            print(f"[*] Email notifications enabled - SMTP: {self.email_notifier.config['smtp_server']}")
+        else:
+            print("[*] Email notifications disabled - Configure email settings to enable")
 
     def log_alert(self, message: str, attack_type: str = "UNKNOWN"):
         """
@@ -386,6 +405,14 @@ class IntegratedRTDSMonitor:
                     print(f"\033[91m{alert_msg}\033[0m")
                     self.log_alert(alert_msg, "DDOS")
                     
+                    # Send email alert
+                    self.email_notifier.send_alert(
+                        alert_type="DDoS Attack",
+                        source=ip,
+                        details=f"Volumetric DDoS attack detected from {ip} with {count} packets per second. This exceeds the threshold of {self.ddos_threshold} pps.",
+                        severity="High"
+                    )
+                    
                     # Block the attacking IP
                     if self.ip_blocker.block_ip(ip, f"DDoS attack - {count} pps", duration=3600):
                         print(f"\033[93m🚫 Auto-blocked IP: {ip} for DDoS attack\033[0m")
@@ -397,6 +424,14 @@ class IntegratedRTDSMonitor:
                     alert_msg = f"🚨 SYN Flood from {ip} - Rate: {count} SYN packets/sec"
                     print(f"\033[91m{alert_msg}\033[0m")
                     self.log_alert(alert_msg, "SYN_FLOOD")
+                    
+                    # Send email alert
+                    self.email_notifier.send_alert(
+                        alert_type="SYN Flood Attack",
+                        source=ip,
+                        details=f"SYN flood attack detected from {ip} with {count} SYN packets per second. This exceeds the threshold of {self.syn_threshold} SYN/sec.",
+                        severity="High"
+                    )
                     
                     # Block the attacking IP
                     if self.ip_blocker.block_ip(ip, f"SYN flood - {count} SYN/sec", duration=1800):
@@ -436,6 +471,14 @@ class IntegratedRTDSMonitor:
             )
             print(f"\033[93m{alert_msg}\033[0m")
             self.log_alert(alert_msg, "MITM")
+            
+            # Send email alert
+            self.email_notifier.send_alert(
+                alert_type="MITM/ARP Spoofing",
+                source=src_ip,
+                details=f"Man-in-the-middle attack detected via ARP spoofing. IP {src_ip} has conflicting MAC addresses: {self.arp_table[src_ip]} → {src_mac}. This indicates potential network interception.",
+                severity="High"
+            )
             
             # Block the spoofing IP
             if self.ip_blocker.block_ip(src_ip, f"ARP spoofing - MAC conflict", duration=7200):
@@ -487,6 +530,8 @@ class IntegratedRTDSMonitor:
                 self.quarantine_dir,
                 self.auto_delete
             )
+            # Pass email notifier to file handler
+            self.file_handler.email_notifier = self.email_notifier
             self.file_observer = Observer()
             self.file_observer.schedule(self.file_handler, self.monitor_path, recursive=True)
             self.file_observer.start()
