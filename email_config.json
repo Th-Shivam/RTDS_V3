@@ -1,17 +1,18 @@
 {
-  "enabled": false,
+  "enabled": true,
   "smtp_server": "smtp.gmail.com",
   "smtp_port": 587,
-  "username": "your_email@gmail.com",
-  "password": "your_app_password",
-  "from_email": "rtds@yourdomain.com",
+  "username": "anotnet.rudra@gmail.com",
+  "password": "mukt pryy taml xbew",
+  "from_email": "anotnet.rudra@gmail.com",
   "to_emails": [
-    "admin@yourdomain.com",
-    "security@yourdomain.com"
+    "anotnet.rudrayt@gmail.com",
+    "linux.rudra@gmail.com"
   ],
   "use_tls": true,
   "use_ssl": false,
   "subject_prefix": "[RTDS Alert]",
   "max_retries": 3,
-  "retry_delay": 5
+  "retry_delay": 5,
+  "alert_cooldown_minutes": 5
 }

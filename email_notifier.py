@@ -25,6 +25,10 @@ class EmailNotifier:
         self.email_queue = Queue()
         self.is_enabled = self.config.get('enabled', False)
         
+        # Alert cooldown tracking (IP -> last_alert_time)
+        self.alert_cooldown = {}
+        self.cooldown_duration = self.config.get('alert_cooldown_minutes', 5) * 60  # Convert to seconds
+        
         # Start email processing thread
         if self.is_enabled:
             self._start_email_processor()
@@ -55,8 +59,9 @@ class EmailNotifier:
             except Exception as e:
                 print(f"[!] Error loading email config: {e}")
         
-        # Override with environment variables
-        config['enabled'] = os.getenv('EMAIL_ENABLED', 'false').lower() == 'true'
+        # Override with environment variables (but keep file setting for enabled if true)
+        if not config.get('enabled', False):
+            config['enabled'] = os.getenv('EMAIL_ENABLED', 'false').lower() == 'true'
         config['smtp_server'] = os.getenv('SMTP_SERVER', config['smtp_server'])
         config['smtp_port'] = int(os.getenv('SMTP_PORT', config['smtp_port']))
         config['username'] = os.getenv('SMTP_USERNAME', config['username'])
@@ -88,6 +93,14 @@ class EmailNotifier:
         email_thread = threading.Thread(target=process_emails, daemon=True)
         email_thread.start()
         print(f"[*] Email notifier initialized - SMTP: {self.config['smtp_server']}:{self.config['smtp_port']}")
+    
+    def _cleanup_cooldown(self):
+        """Remove old entries from cooldown tracker"""
+        current_time = time.time()
+        expired_keys = [key for key, timestamp in self.alert_cooldown.items() 
+                       if current_time - timestamp > self.cooldown_duration]
+        for key in expired_keys:
+            del self.alert_cooldown[key]
     
     def _send_email_sync(self, email_data: Dict) -> bool:
         """Send email synchronously"""
@@ -148,9 +161,22 @@ class EmailNotifier:
             print(f"[!] Failed to add attachment: {e}")
     
     def send_alert(self, alert_type: str, source: str, details: str, severity: str = "Medium"):
-        """Send security alert email"""
+        """Send security alert email with cooldown to prevent spam"""
         if not self.is_enabled:
             return
+        
+        # Check cooldown for this IP
+        current_time = time.time()
+        alert_key = f"{alert_type}_{source}"
+        
+        if alert_key in self.alert_cooldown:
+            time_since_last = current_time - self.alert_cooldown[alert_key]
+            if time_since_last < self.cooldown_duration:
+                print(f"[*] Alert cooldown active for {source} ({int(self.cooldown_duration - time_since_last)}s remaining)")
+                return
+        
+        # Update cooldown tracker
+        self.alert_cooldown[alert_key] = current_time
         
         # Create email content
         subject = f"{alert_type} Alert from {source}"

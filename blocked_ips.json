@@ -1,11 +1,4 @@
 {
-  "blocked_ips": {
-    "23.55.245.176": {
-      "timestamp": 1758357120.8445349,
-      "reason": "DDoS attack - 149 pps",
-      "duration": 3600,
-      "expires": 1758360720.8445356
-    }
-  },
-  "last_updated": "2025-09-20T14:02:00.844543"
+  "blocked_ips": {},
+  "last_updated": "2025-09-22T12:13:41.095153"
 }

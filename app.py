@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from ip_blocker import IPBlocker
 from email_notifier import EmailNotifier
 from phishing_detector import PhishingDetector
+from impact_calculator import ImpactCalculator
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'rtds_secret_key_2024'
@@ -50,6 +51,9 @@ class RTDSDataStore:
         # Email Notifier for dashboard management
         self.email_notifier = EmailNotifier()
         
+        # Impact Calculator for system performance tracking
+        self.impact_calculator = ImpactCalculator(log_callback=self._log_message)
+        
         # Phishing Detector for dashboard management
         self.phishing_detector = PhishingDetector()
         
@@ -60,6 +64,10 @@ class RTDSDataStore:
                 'packets': 0,
                 'attacks': 0
             })
+    
+    def _log_message(self, message, category="INFO"):
+        """Log callback method for impact calculator"""
+        print(f"[{category}] {message}")
     
     def add_attack(self, attack_data):
         self.recent_attacks.append({
@@ -440,6 +448,32 @@ def get_recent_phishing():
     """Get recent phishing detections"""
     # This would be implemented with a proper database in production
     return jsonify([])
+
+# System Impact Monitoring Endpoints
+@app.route('/api/system-impact')
+def get_system_impact():
+    """Get current system impact metrics"""
+    impact = data_store.impact_calculator.get_current_impact()
+    return jsonify(impact)
+
+@app.route('/api/impact-history')
+def get_impact_history():
+    """Get impact history for charts"""
+    minutes = request.args.get('minutes', 10, type=int)
+    history = data_store.impact_calculator.get_impact_history(minutes)
+    return jsonify(history)
+
+@app.route('/api/impact-stats')
+def get_impact_stats():
+    """Get impact statistics"""
+    stats = data_store.impact_calculator.get_impact_stats()
+    return jsonify(stats)
+
+@app.route('/api/system-health')
+def get_system_health():
+    """Get overall system health status"""
+    health = data_store.impact_calculator.get_system_health()
+    return jsonify(health)
 
 # WebSocket events for real-time updates
 @socketio.on('connect')

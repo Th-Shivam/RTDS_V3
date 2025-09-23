@@ -118,10 +118,32 @@ class IPBlocker:
             if self.log_callback:
                 self.log_callback(f"iptables execution error: {e}", "IP_BLOCKER")
             return False
+
+    def _execute_ufw_command(self, command: List[str]) -> bool:
+        """Execute UFW command safely"""
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+            if result.returncode != 0:
+                if self.log_callback:
+                    self.log_callback(f"UFW command failed: {result.stderr}", "IP_BLOCKER")
+                return False
+            return True
+        except Exception as e:
+            if self.log_callback:
+                self.log_callback(f"UFW execution error: {e}", "IP_BLOCKER")
+            return False
+
+    def _check_ufw_status(self) -> bool:
+        """Check if UFW is active"""
+        try:
+            result = subprocess.run(["ufw", "status"], capture_output=True, text=True)
+            return "Status: active" in result.stdout
+        except:
+            return False
     
     def block_ip(self, ip: str, reason: str = "Malicious activity", duration: int = 3600) -> bool:
         """
-        Block an IP address using iptables
+        Block an IP address using iptables or UFW
         
         Args:
             ip: IP address to block
@@ -148,12 +170,26 @@ class IPBlocker:
                 self.log_callback(f"IP {ip} is already blocked", "IP_BLOCKER")
             return True
         
-        # Create iptables rule
-        iptables_cmd = [
-            "iptables", "-I", "INPUT", "-s", ip, "-j", "DROP"
-        ]
+        success = False
         
-        if self._execute_iptables_command(iptables_cmd):
+        # Try UFW first if available
+        if self._check_ufw_status():
+            ufw_cmd = ["ufw", "deny", "from", ip]
+            if self._execute_ufw_command(ufw_cmd):
+                success = True
+                if self.log_callback:
+                    self.log_callback(f"Blocked {ip} using UFW", "IP_BLOCKER")
+        
+        # Fallback to iptables
+        if not success:
+            # Insert at the beginning of INPUT chain to bypass UFW
+            iptables_cmd = ["iptables", "-I", "INPUT", "1", "-s", ip, "-j", "DROP"]
+            if self._execute_iptables_command(iptables_cmd):
+                success = True
+                if self.log_callback:
+                    self.log_callback(f"Blocked {ip} using iptables", "IP_BLOCKER")
+        
+        if success:
             # Record the block
             self.blocked_ips[ip] = {
                 'timestamp': time.time(),
@@ -170,6 +206,8 @@ class IPBlocker:
             
             return True
         
+        if self.log_callback:
+            self.log_callback(f"Failed to block IP: {ip}", "IP_BLOCKER")
         return False
     
     def unblock_ip(self, ip: str) -> bool:
@@ -184,12 +222,24 @@ class IPBlocker:
                 self.log_callback(f"IP {ip} is not currently blocked", "IP_BLOCKER")
             return False
         
-        # Remove iptables rule
-        iptables_cmd = [
-            "iptables", "-D", "INPUT", "-s", ip, "-j", "DROP"
-        ]
+        success = False
         
+        # Try UFW first
+        if self._check_ufw_status():
+            ufw_cmd = ["ufw", "delete", "deny", "from", ip]
+            if self._execute_ufw_command(ufw_cmd):
+                success = True
+                if self.log_callback:
+                    self.log_callback(f"Unblocked {ip} using UFW", "IP_BLOCKER")
+        
+        # Try iptables
+        iptables_cmd = ["iptables", "-D", "INPUT", "-s", ip, "-j", "DROP"]
         if self._execute_iptables_command(iptables_cmd):
+            success = True
+            if self.log_callback:
+                self.log_callback(f"Unblocked {ip} using iptables", "IP_BLOCKER")
+        
+        if success:
             # Remove from blocked list
             del self.blocked_ips[ip]
             self._save_block_history()
@@ -199,6 +249,8 @@ class IPBlocker:
             
             return True
         
+        if self.log_callback:
+            self.log_callback(f"Failed to unblock IP: {ip}", "IP_BLOCKER")
         return False
     
     def is_blocked(self, ip: str) -> bool:

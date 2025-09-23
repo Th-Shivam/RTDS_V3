@@ -49,7 +49,15 @@ def main():
         if not iface:
             iface = "eth0"
         
-        subprocess.run([sys.executable, "rtds_monitor.py", "--iface", iface])
+        # Ask about auto-blocking
+        auto_block = input("Enable automatic IP blocking? (y/N): ").strip().lower()
+        auto_block_flag = "--enable-auto-block" if auto_block == "y" else ""
+        
+        cmd = [sys.executable, "rtds_monitor.py", "--iface", iface]
+        if auto_block_flag:
+            cmd.append(auto_block_flag)
+        
+        subprocess.run(cmd)
         
     elif choice == "3":
         print("\n🔄 Starting both Dashboard and Network Monitor...")

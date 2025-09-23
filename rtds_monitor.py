@@ -14,6 +14,7 @@ from watchdog.events import FileSystemEventHandler
 from ip_blocker import IPBlocker
 from email_notifier import EmailNotifier
 from phishing_detector import PhishingDetector
+from impact_calculator import ImpactCalculator
 
 # Load environment variables
 load_dotenv()
@@ -76,7 +77,7 @@ class FileMonitorHandler(FileSystemEventHandler):
                 
                 if malicious_count > 0:
                     alert_msg = f"🦠 MALWARE DETECTED: {file_path} - Detections: {malicious_count}/{stats.get('total', 0)} engines"
-                    print(f"\033[91m{alert_msg}\033[0m")
+                    print(f"\n\033[91m{alert_msg}\033[0m")
                     self.log_callback(alert_msg, "MALWARE")
                     
                     # Send malware alert via email
@@ -90,16 +91,16 @@ class FileMonitorHandler(FileSystemEventHandler):
                     self.quarantine_malicious_file(file_path)
                 elif suspicious_count > 0:
                     alert_msg = f"⚠️ SUSPICIOUS FILE: {file_path} - Detections: {suspicious_count}/{stats.get('total', 0)} engines"
-                    print(f"\033[93m{alert_msg}\033[0m")
+                    print(f"\n\033[93m{alert_msg}\033[0m")
                     self.log_callback(alert_msg, "SUSPICIOUS")
                 else:
                     clean_msg = f"✅ File is clean: {os.path.basename(file_path)}"
-                    print(f"\033[92m{clean_msg}\033[0m")
+                    print(f"\n\033[92m{clean_msg}\033[0m")
                     self.log_callback(clean_msg, "CLEAN")
                     
             elif response.status_code == 404:
                 # File not found - upload for analysis
-                print(f"\033[96m📤 File not in database, uploading: {os.path.basename(file_path)}\033[0m")
+                print(f"\n\033[96m📤 File not in database, uploading: {os.path.basename(file_path)}\033[0m")
                 upload_result = self._upload_file_to_virustotal(file_path, file_content)
                 if upload_result:
                     self.log_callback(f"📤 UPLOADED: {file_path} - Analysis pending", "UPLOADED")
@@ -132,7 +133,7 @@ class FileMonitorHandler(FileSystemEventHandler):
         except:
             return True
             
-        # Skip certain safe extensions (but allow .txt for testing)
+        # Skip certain safe extensions
         safe_extensions = {'.log', '.md', '.json', '.xml', '.csv'}
         _, ext = os.path.splitext(filename.lower())
         if ext in safe_extensions:
@@ -231,7 +232,7 @@ class FileMonitorHandler(FileSystemEventHandler):
         Triggered when a new file is created.
         """
         if not event.is_directory:
-            print(f"\033[96m📄 New file detected: {event.src_path}\033[0m")
+            print(f"\n\033[96m📄 New file detected: {event.src_path}\033[0m")
             # Add delay to ensure file is fully written
             time.sleep(1.0)
             self.scan_file_with_virustotal(event.src_path)
@@ -244,7 +245,7 @@ class FileMonitorHandler(FileSystemEventHandler):
             # Only scan if file was significantly modified (avoid temp file spam)
             try:
                 if os.path.getsize(event.src_path) > 1024:  # Only scan files > 1KB
-                    print(f"\033[96m📝 File modified: {event.src_path}\033[0m")
+                    print(f"\n\033[96m📝 File modified: {event.src_path}\033[0m")
                     time.sleep(1.0)
                     self.scan_file_with_virustotal(event.src_path)
             except:
@@ -274,7 +275,7 @@ class IntegratedRTDSMonitor:
     
     def __init__(self, iface: str, ddos_threshold: int, syn_threshold: int, 
                  log_file: str, monitor_path: str = None, virustotal_api_key: str = None,
-                 quarantine_dir: str = None, auto_delete: bool = True):
+                 quarantine_dir: str = None, auto_delete: bool = True, enable_auto_block: bool = False):
         """
         Initializes the integrated monitor with user-defined settings.
 
@@ -287,6 +288,7 @@ class IntegratedRTDSMonitor:
             virustotal_api_key: API key for VirusTotal integration.
             quarantine_dir: Directory to move malicious files (if None, files will be deleted).
             auto_delete: Whether to automatically remove malicious files.
+            enable_auto_block: Whether to enable automatic IP blocking (disabled by default).
         """
         self.iface = iface
         self.ddos_threshold = ddos_threshold
@@ -296,6 +298,7 @@ class IntegratedRTDSMonitor:
         self.virustotal_api_key = virustotal_api_key
         self.quarantine_dir = quarantine_dir
         self.auto_delete = auto_delete
+        self.enable_auto_block = enable_auto_block
 
         # --- Network Monitoring State Variables ---
         self.packet_counts: dict[str, int] = defaultdict(int)
@@ -329,7 +332,10 @@ class IntegratedRTDSMonitor:
         
         # --- IP Blocking System ---
         self.ip_blocker = IPBlocker(log_callback=self.log_alert)
-        print(f"[*] IP Blocker initialized - Whitelist entries: {len(self.ip_blocker.whitelist)}")
+        if self.enable_auto_block:
+            print(f"[*] ✅ Automatic IP blocking ENABLED - Whitelist entries: {len(self.ip_blocker.whitelist)}")
+        else:
+            print(f"[*] ⚠️  Automatic IP blocking DISABLED - Use --enable-auto-block to enable")
         
         # Email notifier already initialized above
         if self.email_notifier.is_enabled:
@@ -340,6 +346,11 @@ class IntegratedRTDSMonitor:
         # --- Phishing Detection System ---
         self.phishing_detector = PhishingDetector(log_callback=self.log_alert)
         print(f"[*] Phishing detection enabled - Database entries: {len(self.phishing_detector.known_phishing_urls)}")
+        
+        # --- Impact Calculator ---
+        self.impact_calculator = ImpactCalculator(log_callback=self.log_alert)
+        self.active_attacks = {}  # Track ongoing attacks for impact calculation
+        print("[*] System impact calculator initialized")
 
     def log_alert(self, message: str, attack_type: str = "UNKNOWN"):
         """
@@ -407,8 +418,17 @@ class IntegratedRTDSMonitor:
                 if count > self.ddos_threshold:
                     self.total_attacks += 1
                     alert_msg = f"🚨 DDoS Attack from {ip} - Rate: {count} packets/sec"
-                    print(f"\033[91m{alert_msg}\033[0m")
+                    print(f"\n\033[91m{alert_msg}\033[0m")
                     self.log_alert(alert_msg, "DDOS")
+                    
+                    # Start impact tracking for this attack
+                    attack_id = f"ddos_{ip}_{int(time.time())}"
+                    self.impact_calculator.start_attack_tracking(attack_id, "DDoS")
+                    self.active_attacks[attack_id] = {
+                        'type': 'DDoS',
+                        'source': ip,
+                        'start_time': time.time()
+                    }
                     
                     # Send email alert
                     self.email_notifier.send_alert(
@@ -418,17 +438,29 @@ class IntegratedRTDSMonitor:
                         severity="High"
                     )
                     
-                    # Block the attacking IP
-                    if self.ip_blocker.block_ip(ip, f"DDoS attack - {count} pps", duration=3600):
-                        print(f"\033[93m🚫 Auto-blocked IP: {ip} for DDoS attack\033[0m")
+                    # Block the attacking IP (only if auto-blocking is enabled)
+                    if self.enable_auto_block:
+                        if self.ip_blocker.block_ip(ip, f"DDoS attack - {count} pps", duration=3600):
+                            print(f"\033[93m🚫 Auto-blocked IP: {ip} for DDoS attack\033[0m")
+                    else:
+                        print(f"\033[93m⚠️  IP {ip} detected as malicious but auto-blocking is disabled\033[0m")
 
             # SYN Flood Check
             for ip, count in self.syn_counts.items():
                 if count > self.syn_threshold:
                     self.total_attacks += 1
                     alert_msg = f"🚨 SYN Flood from {ip} - Rate: {count} SYN packets/sec"
-                    print(f"\033[91m{alert_msg}\033[0m")
+                    print(f"\n\033[91m{alert_msg}\033[0m")
                     self.log_alert(alert_msg, "SYN_FLOOD")
+                    
+                    # Start impact tracking for SYN flood
+                    attack_id = f"syn_{ip}_{int(time.time())}"
+                    self.impact_calculator.start_attack_tracking(attack_id, "SYN Flood")
+                    self.active_attacks[attack_id] = {
+                        'type': 'SYN Flood',
+                        'source': ip,
+                        'start_time': time.time()
+                    }
                     
                     # Send email alert
                     self.email_notifier.send_alert(
@@ -438,15 +470,27 @@ class IntegratedRTDSMonitor:
                         severity="High"
                     )
                     
-                    # Block the attacking IP
-                    if self.ip_blocker.block_ip(ip, f"SYN flood - {count} SYN/sec", duration=1800):
-                        print(f"\033[93m🚫 Auto-blocked IP: {ip} for SYN flood\033[0m")
+                    # Block the attacking IP (only if auto-blocking is enabled)
+                    if self.enable_auto_block:
+                        if self.ip_blocker.block_ip(ip, f"SYN flood - {count} pps", duration=3600):
+                            print(f"\033[93m🚫 Auto-blocked IP: {ip} for SYN flood\033[0m")
+                    else:
+                        print(f"\033[93m⚠️  IP {ip} detected as malicious but auto-blocking is disabled\033[0m")
 
             # Reset counts for the next second.
             self.packet_counts.clear()
             self.syn_counts.clear()
             self.current_second_packets = 0
             self.last_reset = current_time
+            
+            # Update impact for active attacks
+            for attack_id in list(self.active_attacks.keys()):
+                self.impact_calculator.update_attack_impact(attack_id)
+                
+                # End attack tracking if it's been more than 30 seconds since last activity
+                if current_time - self.active_attacks[attack_id]['start_time'] > 30:
+                    self.impact_calculator.end_attack_tracking(attack_id)
+                    del self.active_attacks[attack_id]
 
     def detect_mitm_attack(self, packet):
         """
@@ -474,7 +518,7 @@ class IntegratedRTDSMonitor:
                 f"⚠️ MITM/ARP Spoofing Detected! "
                 f"IP: {src_ip} | Old MAC: {self.arp_table[src_ip]} → New MAC: {src_mac}"
             )
-            print(f"\033[93m{alert_msg}\033[0m")
+            print(f"\n\033[93m{alert_msg}\033[0m")
             self.log_alert(alert_msg, "MITM")
             
             # Send email alert
@@ -485,15 +529,18 @@ class IntegratedRTDSMonitor:
                 severity="High"
             )
             
-            # Block the spoofing IP
-            if self.ip_blocker.block_ip(src_ip, f"ARP spoofing - MAC conflict", duration=7200):
-                print(f"\033[93m🚫 Auto-blocked IP: {src_ip} for ARP spoofing\033[0m")
+            # Block the spoofing IP (only if auto-blocking is enabled)
+            if self.enable_auto_block:
+                if self.ip_blocker.block_ip(src_ip, f"ARP spoofing - MAC conflict", duration=7200):
+                    print(f"\033[93m🚫 Auto-blocked IP: {src_ip} for ARP spoofing\033[0m")
+            else:
+                print(f"\033[93m⚠️  IP {src_ip} detected for ARP spoofing but auto-blocking is disabled\033[0m")
         
         # Update the ARP table
         self.arp_table[src_ip] = src_mac
         # Only show new device mapping for genuinely new devices
         if src_ip not in self.arp_table or len(self.arp_table) < 10:
-            print(f"\033[92m✅ Device mapped: {src_ip} → {src_mac}\033[0m")
+            print(f"\n\033[92m✅ Device mapped: {src_ip} → {src_mac}\033[0m")
     
     def detect_phishing_attempts(self, packet):
         """
@@ -525,7 +572,7 @@ class IntegratedRTDSMonitor:
                 if detection['is_phishing']:
                     self.total_attacks += 1
                     alert_msg = f"🎣 PHISHING DETECTED: {detection['url']} - Confidence: {detection['confidence']:.2f} - Severity: {detection['severity']}"
-                    print(f"\033[91m{alert_msg}\033[0m")
+                    print(f"\n\033[91m{alert_msg}\033[0m")
                     self.log_alert(alert_msg, "PHISHING")
                     
                     # Send email alert for phishing
@@ -536,9 +583,12 @@ class IntegratedRTDSMonitor:
                         severity=detection['severity']
                     )
                     
-                    # Block the source IP for phishing
-                    if self.ip_blocker.block_ip(packet_data['src_ip'], f"Phishing attempt - {detection['url']}", duration=7200):
-                        print(f"\033[93m🚫 Auto-blocked IP: {packet_data['src_ip']} for phishing attempt\033[0m")
+                    # Block the source IP for phishing (only if auto-blocking is enabled)
+                    if self.enable_auto_block:
+                        if self.ip_blocker.block_ip(packet_data['src_ip'], f"Phishing attempt - {detection['url']}", duration=7200):
+                            print(f"\033[93m🚫 Auto-blocked IP: {packet_data['src_ip']} for phishing attempt\033[0m")
+                    else:
+                        print(f"\033[93m⚠️  IP {packet_data['src_ip']} detected for phishing but auto-blocking is disabled\033[0m")
         
         except Exception as e:
             print(f"[!] Phishing detection error: {e}")
@@ -616,8 +666,11 @@ class IntegratedRTDSMonitor:
         uptime = int(time.time() - self.start_time)
         hours, minutes, seconds = uptime // 3600, (uptime % 3600) // 60, uptime % 60
         
+        # Clear previous stats line and move cursor up
+        print("\033[K", end="")  # Clear current line
+        
         stats_line = (
-            f"\033[92m📊 Runtime: {hours:02d}:{minutes:02d}:{seconds:02d} | "
+            f"\r\033[92m📊 Runtime: {hours:02d}:{minutes:02d}:{seconds:02d} | "
             f"Packets: {self.total_packets} | "
             f"Network Attacks: {self.total_attacks} | "
             f"ARP Entries: {len(self.arp_table)}"
@@ -627,10 +680,10 @@ class IntegratedRTDSMonitor:
             stats_line += f" | Files Scanned: {self.total_files_scanned} | Malware Found: {self.total_malware_found}"
         
         stats_line += "\033[0m"
-        print(stats_line)
+        print(stats_line, end="", flush=True)
         
-        # Schedule next statistics display
-        threading.Timer(10.0, self.show_statistics).start()
+        # Schedule next statistics display every 5 seconds
+        threading.Timer(5.0, self.show_statistics).start()
 
     def start_monitoring(self):
         """
@@ -644,6 +697,7 @@ class IntegratedRTDSMonitor:
 """)
         print(f"[*] Network Interface: {self.iface} | Local IP: {self.local_ip}")
         print(f"[*] DDoS Threshold: {self.ddos_threshold} pps | SYN Threshold: {self.syn_threshold} pps")
+        print(f"[*] Auto IP Blocking: {'✅ ENABLED' if self.enable_auto_block else '❌ DISABLED'}")
         print(f"[*] Log File: {self.log_file}")
         
         # Setup file monitoring
@@ -651,8 +705,8 @@ class IntegratedRTDSMonitor:
         
         print(f"\n[*] Starting integrated monitoring... (Press Ctrl+C to stop)\n")
 
-        # Start the statistics timer
-        threading.Timer(10.0, self.show_statistics).start()
+        # Start the statistics timer (5 seconds)
+        threading.Timer(5.0, self.show_statistics).start()
         
         # Start network packet sniffing
         try:
@@ -694,6 +748,9 @@ if __name__ == "__main__":
     parser.add_argument("--ddos-threshold", type=int, default=100, help="DDoS packet threshold (pps)")
     parser.add_argument("--syn-threshold", type=int, default=50, help="SYN flood threshold (pps)")
     parser.add_argument("--iface", default="Wi-Fi", help="Network interface (Windows example: Wi-Fi)")
+    
+    # IP Blocking arguments
+    parser.add_argument("--enable-auto-block", action="store_true", help="Enable automatic IP blocking (disabled by default)")
     
     # File monitoring arguments
     parser.add_argument("--quarantine-dir", type=str, help="Directory to quarantine malicious files (default: delete)")
@@ -745,7 +802,8 @@ if __name__ == "__main__":
         monitor_path=monitor_path,
         virustotal_api_key=vt_api_key,
         quarantine_dir=args.quarantine_dir,
-        auto_delete=not args.no_auto_delete
+        auto_delete=not args.no_auto_delete,
+        enable_auto_block=args.enable_auto_block
     )
     
     monitor.start_monitoring()
